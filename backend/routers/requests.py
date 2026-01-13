@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification
+from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -19,6 +19,7 @@ class RequestCreate(BaseModel):
     level: str
     budget: int = 0 # in cents
     target_teacher_id: Optional[int] = None
+    is_private: bool = False
 
 class RequestRead(BaseModel):
     id: int
@@ -30,6 +31,7 @@ class RequestRead(BaseModel):
     status: RequestStatus
     target_teacher_id: Optional[int]
     counter_offer_amount: Optional[int]
+    is_private: bool
     created_at: datetime
     user_id: int
     user_name: str
@@ -77,7 +79,8 @@ def create_request(
         notification = Notification(
             user_id=request.target_teacher_id,
             content=f"Student {current_user.full_name} requested a video from you: {request.title}",
-            is_read=False
+            is_read=False,
+            link="/requests"
         )
         session.add(notification)
         session.commit()
@@ -90,12 +93,18 @@ def list_requests(
     offset: int = 0,
     language: Optional[str] = None,
     level: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
     List content requests.
     """
     query = select(Request).options(selectinload(Request.user))
+    
+    if current_user and current_user.role == UserRole.TEACHER:
+        # Exclude blacklisted requests for this teacher
+        blacklist_sub = select(RequestBlacklist.request_id).where(RequestBlacklist.teacher_id == current_user.id)
+        query = query.where(Request.id.notin_(blacklist_sub))
     
     if language:
         query = query.where(Request.language == language)
@@ -119,6 +128,7 @@ def list_requests(
             status=r.status,
             target_teacher_id=r.target_teacher_id,
             counter_offer_amount=r.counter_offer_amount,
+            is_private=r.is_private,
             created_at=r.created_at,
             user_id=r.user_id,
             user_name=user_name
@@ -143,6 +153,12 @@ def delete_request(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not authorized to delete this request",
+        )
+    
+    if request.status not in [RequestStatus.OPEN, RequestStatus.NEGOTIATING, RequestStatus.REJECTED]:
+         raise HTTPException(
+            status_code=400,
+            detail="Cannot delete a request that has been accepted",
         )
         
     session.delete(request)
@@ -177,7 +193,8 @@ def convert_request_to_project(
         goal_amount=request.budget, # Use the student's budget
         status=ProjectStatus.DRAFT,
         teacher_id=current_user.id,
-        origin_request_id=request.id
+        origin_request_id=request.id,
+        is_private=request.is_private
     )
     
     request.status = RequestStatus.ACCEPTED
@@ -190,7 +207,8 @@ def convert_request_to_project(
     notification = Notification(
         user_id=request.user_id,
         content=f"Teacher {current_user.full_name} accepted your request '{request.title}'!",
-        is_read=False
+        is_read=False,
+        link=f"/projects/{project.id}"
     )
     session.add(notification)
     session.commit()
@@ -229,7 +247,8 @@ def counter_offer(
     notification = Notification(
         user_id=request.user_id,
         content=f"Teacher {current_user.full_name} proposed a new price for your request: {request.title}",
-        is_read=False
+        is_read=False,
+        link="/requests"
     )
     session.add(notification)
     session.commit()
@@ -266,7 +285,8 @@ def accept_offer(
         goal_amount=request.counter_offer_amount,
         status=ProjectStatus.ACTIVE, # Ready for funding immediately
         teacher_id=request.target_teacher_id,
-        origin_request_id=request.id
+        origin_request_id=request.id,
+        is_private=request.is_private
     )
     
     request.status = RequestStatus.ACCEPTED
@@ -279,7 +299,8 @@ def accept_offer(
     notification = Notification(
         user_id=request.target_teacher_id,
         content=f"Offer accepted! Project '{project.title}' is now created.",
-        is_read=False
+        is_read=False,
+        link=f"/projects/{project.id}"
     )
     session.add(notification)
     session.commit()
@@ -302,16 +323,29 @@ def reject_offer(
     if request.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not authorized")
         
-    request.status = RequestStatus.REJECTED
+    # Capture the teacher ID before clearing it to notify them
+    previous_teacher_id = request.target_teacher_id
+
+    # Reset request to OPEN and PUBLIC so other teachers can claim it
+    request.status = RequestStatus.OPEN
+    request.counter_offer_amount = None
+    request.target_teacher_id = None
+    request.is_private = False
+
     session.add(request)
     session.commit()
     session.refresh(request)
     
-    if request.target_teacher_id:
+    if previous_teacher_id:
+        # Add to blacklist so this teacher doesn't see it again
+        blacklist = RequestBlacklist(request_id=request.id, teacher_id=previous_teacher_id)
+        session.add(blacklist)
+
         notification = Notification(
-            user_id=request.target_teacher_id,
-            content=f"Offer rejected for '{request.title}'.",
-            is_read=False
+            user_id=previous_teacher_id,
+            content=f"Offer rejected for '{request.title}'. The request has been re-opened.",
+            is_read=False,
+            link="/requests"
         )
         session.add(notification)
         session.commit()

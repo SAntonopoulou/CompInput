@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
+import ConfirmationModal from '../components/ConfirmationModal';
+import { useToast } from '../context/ToastContext';
 
 const RequestList = () => {
   const [requests, setRequests] = useState([]);
@@ -14,7 +16,8 @@ const RequestList = () => {
     language: 'Japanese',
     level: 'N5',
     budget: 0,
-    target_teacher_id: null
+    target_teacher_id: null,
+    is_private: false
   });
   const [teacherSearch, setTeacherSearch] = useState('');
   const [teacherResults, setTeacherResults] = useState([]);
@@ -23,7 +26,12 @@ const RequestList = () => {
   const [showCounterModal, setShowCounterModal] = useState(false);
   const [selectedRequestId, setSelectedRequestId] = useState(null);
   
+  // Modal State
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [requestToDelete, setRequestToDelete] = useState(null);
+
   const navigate = useNavigate();
+  const { addToast } = useToast();
   const token = localStorage.getItem('token');
 
   useEffect(() => {
@@ -51,12 +59,13 @@ const RequestList = () => {
         setRequests(response.data);
       } catch (error) {
         console.error('Error fetching requests:', error);
+        addToast('Error fetching requests', 'error');
       } finally {
         setLoading(false);
       }
     };
     fetchRequests();
-  }, [filters]);
+  }, [filters, addToast]);
 
   // Teacher Search
   useEffect(() => {
@@ -90,14 +99,16 @@ const RequestList = () => {
       };
       await client.post('/requests/', payload);
       setShowModal(false);
-      setNewRequest({ title: '', description: '', language: 'Japanese', level: 'N5', budget: 0, target_teacher_id: null });
+      setNewRequest({ title: '', description: '', language: 'Japanese', level: 'N5', budget: 0, target_teacher_id: null, is_private: false });
       setSelectedTeacherName('');
       setTeacherSearch('');
+      addToast('Request created successfully!', 'success');
       // Refresh list
       const response = await client.get('/requests/');
       setRequests(response.data);
     } catch (error) {
       console.error("Failed to create request", error);
+      addToast('Failed to create request', 'error');
     }
   };
 
@@ -108,7 +119,7 @@ const RequestList = () => {
       navigate(`/teacher/projects/${newProject.id}/edit`);
     } catch (error) {
       console.error("Failed to convert request", error);
-      alert("Failed to fulfill request. Please try again.");
+      addToast("Failed to fulfill request. Please try again.", 'error');
     }
   };
 
@@ -119,11 +130,13 @@ const RequestList = () => {
         amount: Math.round(counterOfferAmount * 100)
       });
       setShowCounterModal(false);
+      addToast('Counter offer sent!', 'success');
       // Refresh list
       const response = await client.get('/requests/');
       setRequests(response.data);
     } catch (error) {
       console.error("Failed to send counter offer", error);
+      addToast('Failed to send counter offer', 'error');
     }
   };
 
@@ -134,18 +147,41 @@ const RequestList = () => {
       navigate(`/projects/${newProject.id}`);
     } catch (error) {
       console.error("Failed to accept offer", error);
+      addToast('Failed to accept offer', 'error');
     }
   };
 
   const handleRejectOffer = async (requestId) => {
     try {
       await client.post(`/requests/${requestId}/reject-offer`);
+      addToast('Offer rejected', 'info');
       // Refresh list
       const response = await client.get('/requests/');
       setRequests(response.data);
     } catch (error) {
       console.error("Failed to reject offer", error);
+      addToast('Failed to reject offer', 'error');
     }
+  };
+
+  const confirmDeleteRequest = (requestId) => {
+      setRequestToDelete(requestId);
+      setConfirmModalOpen(true);
+  };
+
+  const handleDeleteRequest = async () => {
+      setConfirmModalOpen(false);
+      if (!requestToDelete) return;
+
+      try {
+          await client.delete(`/requests/${requestToDelete}`);
+          addToast('Request cancelled', 'success');
+          const response = await client.get('/requests/');
+          setRequests(response.data);
+      } catch (error) {
+          console.error("Failed to delete request", error);
+          addToast(error.response?.data?.detail || "Failed to delete request", 'error');
+      }
   };
 
   const formatCurrency = (amountInCents) => {
@@ -210,7 +246,7 @@ const RequestList = () => {
         <div className="text-center py-10">Loading...</div>
       ) : requests.length === 0 ? (
         <div className="text-center py-10 bg-white rounded-lg shadow">
-          <p className="text-gray-500">No requests found.</p>
+          <p className="text-gray-500">No requests? Ask for the content you want to see!</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -223,6 +259,11 @@ const RequestList = () => {
             if (req.status !== 'open' && req.status !== 'negotiating') {
                 if (!user || user.id !== req.user_id) return null;
             }
+            // Hide private requests from non-participants
+            if (req.is_private) {
+                if (!user) return null;
+                if (user.id !== req.user_id && user.id !== req.target_teacher_id) return null;
+            }
 
             return (
             <div key={req.id} className={`bg-white overflow-hidden shadow rounded-lg border ${req.target_teacher_id ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-gray-200'}`}>
@@ -231,11 +272,18 @@ const RequestList = () => {
                     <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
                     {req.title}
                     </h3>
-                    {req.target_teacher_id && (
-                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
-                            Targeted
-                        </span>
-                    )}
+                    <div className="flex flex-col items-end space-y-1">
+                        {req.target_teacher_id && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+                                Targeted
+                            </span>
+                        )}
+                        {req.is_private && (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                Private
+                            </span>
+                        )}
+                    </div>
                 </div>
                 
                 <div className="flex space-x-2 mb-4">
@@ -288,20 +336,32 @@ const RequestList = () => {
                   )}
 
                   {/* Student Actions (Owner) */}
-                  {user && user.id === req.user_id && req.status === 'negotiating' && (
+                  {user && user.id === req.user_id && (
                       <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleRejectOffer(req.id)}
-                            className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none"
-                          >
-                              Reject
-                          </button>
-                          <button
-                            onClick={() => handleAcceptOffer(req.id)}
-                            className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none"
-                          >
-                              Accept Offer
-                          </button>
+                          {req.status === 'negotiating' && (
+                              <>
+                                <button
+                                    onClick={() => handleRejectOffer(req.id)}
+                                    className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50 focus:outline-none"
+                                >
+                                    Reject
+                                </button>
+                                <button
+                                    onClick={() => handleAcceptOffer(req.id)}
+                                    className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none"
+                                >
+                                    Accept Offer
+                                </button>
+                              </>
+                          )}
+                          {(req.status === 'open' || req.status === 'negotiating') && (
+                              <button
+                                onClick={() => confirmDeleteRequest(req.id)}
+                                className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50 focus:outline-none"
+                              >
+                                  Cancel Request
+                              </button>
+                          )}
                       </div>
                   )}
                   
@@ -426,6 +486,21 @@ const RequestList = () => {
                             </ul>
                         )}
                     </div>
+                    {newRequest.target_teacher_id && (
+                        <div className="flex items-center">
+                            <input
+                                id="is_private"
+                                name="is_private"
+                                type="checkbox"
+                                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                                checked={newRequest.is_private}
+                                onChange={(e) => setNewRequest({...newRequest, is_private: e.target.checked})}
+                            />
+                            <label htmlFor="is_private" className="ml-2 block text-sm text-gray-900">
+                                Private Request (Only visible to target teacher)
+                            </label>
+                        </div>
+                    )}
                   </div>
                 </div>
                 <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
@@ -493,6 +568,16 @@ const RequestList = () => {
           </div>
         </div>
       )}
+
+      <ConfirmationModal 
+        isOpen={confirmModalOpen}
+        onClose={() => setConfirmModalOpen(false)}
+        onConfirm={handleDeleteRequest}
+        title="Cancel Request"
+        message="Are you sure you want to cancel this request? This cannot be undone."
+        confirmText="Cancel Request"
+        isDanger={true}
+      />
     </div>
   );
 };

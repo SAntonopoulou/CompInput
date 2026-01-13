@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../../api/client';
 import VideoUpload from '../../components/VideoUpload';
+import ConfirmationModal from '../../components/ConfirmationModal';
+import { useToast } from '../../context/ToastContext';
 
 const Dashboard = () => {
   const [projects, setProjects] = useState([]);
@@ -9,6 +11,12 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
+  
+  // Modal State
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalConfig, setModalConfig] = useState({});
+  
+  const { addToast } = useToast();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -17,15 +25,18 @@ const Dashboard = () => {
         setUser(userRes.data);
         
         const projectsRes = await client.get('/projects/me');
-        setProjects(projectsRes.data);
+        // Filter out cancelled projects from the main view
+        const activeProjects = projectsRes.data.filter(p => p.status !== 'cancelled');
+        setProjects(activeProjects);
       } catch (error) {
         console.error("Failed to fetch dashboard data", error);
+        addToast("Failed to load dashboard data", 'error');
       } finally {
         setLoading(false);
       }
     };
     fetchData();
-  }, []);
+  }, [addToast]);
 
   const handleSetupPayouts = async () => {
     try {
@@ -33,7 +44,7 @@ const Dashboard = () => {
       window.location.href = response.data.url;
     } catch (error) {
       console.error("Failed to setup payouts", error);
-      alert("Failed to initiate Stripe onboarding.");
+      addToast("Failed to initiate Stripe onboarding.", 'error');
     }
   };
 
@@ -44,36 +55,62 @@ const Dashboard = () => {
 
   const handleVideoUploadSuccess = () => {
     setShowVideoModal(false);
+    addToast("Video uploaded successfully!", 'success');
     // Refresh projects
-    client.get('/projects/me').then(res => setProjects(res.data));
+    client.get('/projects/me').then(res => {
+        const activeProjects = res.data.filter(p => p.status !== 'cancelled');
+        setProjects(activeProjects);
+    });
+  };
+
+  const confirmCompleteProject = (projectId) => {
+    setModalConfig({
+      title: "Complete Project",
+      message: "Are you sure? This will release funds to your account.",
+      confirmText: "Complete & Payout",
+      isDanger: false,
+      onConfirm: () => handleCompleteProject(projectId)
+    });
+    setModalOpen(true);
   };
 
   const handleCompleteProject = async (projectId) => {
-    if (!window.confirm("Are you sure? This will release funds to your account.")) return;
-    
+    setModalOpen(false);
     try {
       await client.post(`/projects/${projectId}/complete`);
       // Refresh projects
       const res = await client.get('/projects/me');
-      setProjects(res.data);
-      alert("Project completed and funds released!");
+      const activeProjects = res.data.filter(p => p.status !== 'cancelled');
+      setProjects(activeProjects);
+      addToast("Project completed and funds released!", 'success');
     } catch (error) {
       console.error("Failed to complete project", error);
-      alert(error.response?.data?.detail || "Failed to complete project.");
+      addToast(error.response?.data?.detail || "Failed to complete project.", 'error');
     }
   };
 
-  const handleCancelProject = async (projectId) => {
-      if (!window.confirm("Are you sure? This will refund all backers and cannot be undone.")) return;
+  const confirmCancelProject = (projectId) => {
+    setModalConfig({
+      title: "Cancel Project",
+      message: "Are you sure? This will refund all backers and cannot be undone.",
+      confirmText: "Cancel Project",
+      isDanger: true,
+      onConfirm: () => handleCancelProject(projectId)
+    });
+    setModalOpen(true);
+  };
 
+  const handleCancelProject = async (projectId) => {
+      setModalOpen(false);
       try {
           await client.post(`/projects/${projectId}/cancel`);
           const res = await client.get('/projects/me');
-          setProjects(res.data);
-          alert("Project cancelled and refunds initiated.");
+          const activeProjects = res.data.filter(p => p.status !== 'cancelled');
+          setProjects(activeProjects);
+          addToast("Project cancelled and refunds initiated.", 'success');
       } catch (error) {
           console.error("Failed to cancel project", error);
-          alert(error.response?.data?.detail || "Failed to cancel project.");
+          addToast(error.response?.data?.detail || "Failed to cancel project.", 'error');
       }
   };
 
@@ -121,7 +158,7 @@ const Dashboard = () => {
         <ul className="divide-y divide-gray-200">
           {projects.length === 0 ? (
             <li className="px-4 py-4 sm:px-6 text-center text-gray-500">
-              No projects yet. Create one to get started!
+              No active projects. Create one to get started!
             </li>
           ) : (
             projects.map((project) => (
@@ -153,7 +190,7 @@ const Dashboard = () => {
 
                       {project.status === 'in_progress' && (
                         <button
-                          onClick={() => handleCompleteProject(project.id)}
+                          onClick={() => confirmCompleteProject(project.id)}
                           className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200"
                         >
                           Mark Complete
@@ -162,7 +199,7 @@ const Dashboard = () => {
 
                       {project.status !== 'completed' && project.status !== 'cancelled' && (
                           <button
-                            onClick={() => handleCancelProject(project.id)}
+                            onClick={() => confirmCancelProject(project.id)}
                             className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200"
                           >
                               Cancel
@@ -195,6 +232,17 @@ const Dashboard = () => {
             onSuccess={handleVideoUploadSuccess}
         />
       )}
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal 
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onConfirm={modalConfig.onConfirm}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        confirmText={modalConfig.confirmText}
+        isDanger={modalConfig.isDanger}
+      />
     </div>
   );
 };

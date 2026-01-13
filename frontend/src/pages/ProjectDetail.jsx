@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import client from '../api/client';
 import PledgeForm from '../components/PledgeForm';
+import RateVideo from '../components/RateVideo';
 
 const ProjectDetail = () => {
   const { id } = useParams();
   const [project, setProject] = useState(null);
+  const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const token = localStorage.getItem('token');
@@ -15,6 +17,12 @@ const ProjectDetail = () => {
       try {
         const response = await client.get(`/projects/${id}`);
         setProject(response.data);
+        
+        // Fetch videos if project has them
+        if (response.data.status === 'in_progress' || response.data.status === 'completed') {
+            const videosRes = await client.get('/videos/', { params: { project_id: id } });
+            setVideos(videosRes.data);
+        }
       } catch (err) {
         console.error(err);
         setError("Failed to load project details.");
@@ -59,13 +67,39 @@ const ProjectDetail = () => {
               {project.level}
             </span>
             <span className="text-gray-500 text-sm">
-                By {project.teacher_name}
+                {project.requester_name ? (
+                    <>Requested by <Link to={`/profile/${project.requester_id}`} className="text-indigo-600 hover:underline">{project.requester_name}</Link></>
+                ) : (
+                    <>By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline">{project.teacher_name}</Link></>
+                )}
             </span>
           </div>
 
-          <div className="prose prose-indigo max-w-none text-gray-500">
+          <div className="prose prose-indigo max-w-none text-gray-500 mb-8">
             <p className="whitespace-pre-line">{project.description}</p>
           </div>
+
+          {/* Videos Section */}
+          {videos.length > 0 && (
+              <div className="mt-8 border-t border-gray-200 pt-8">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Videos</h2>
+                  <div className="space-y-6">
+                      {videos.map(video => (
+                          <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                              <h3 className="text-lg font-medium text-gray-900">{video.title}</h3>
+                              <div className="aspect-w-16 aspect-h-9 mt-2 mb-4 bg-gray-100 rounded flex items-center justify-center">
+                                  {/* Placeholder for video embed */}
+                                  <a href={video.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center">
+                                      <svg className="h-8 w-8 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>
+                                      Watch on {video.platform}
+                                  </a>
+                              </div>
+                              {token && <RateVideo videoId={video.id} />}
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
         </div>
 
         {/* Sidebar / Action Area */}
@@ -111,6 +145,13 @@ const ProjectDetail = () => {
                 <div className="mt-6 pt-6 border-t border-gray-200">
                     <p className="text-sm text-gray-500">
                         Deadline: {new Date(project.deadline).toLocaleDateString()}
+                    </p>
+                </div>
+            )}
+             {project.delivery_days && !project.deadline && (
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                    <p className="text-sm text-gray-500">
+                        Delivery: {project.delivery_days} days after funding
                     </p>
                 </div>
             )}

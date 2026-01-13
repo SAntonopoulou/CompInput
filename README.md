@@ -4,12 +4,30 @@ A web application that connects language learners with teachers. Learners can cr
 
 ## Features
 
-*   **Crowdfunding Campaigns:** Teachers create project proposals with funding goals.
-*   **Pledges:** Students pledge money via Stripe to fund projects.
-*   **Video Delivery:** Teachers upload videos to fulfilled projects; backers get notified.
-*   **Request Board:** Students can request specific topics, and teachers can convert these requests into projects.
-*   **Dashboards:** Dedicated dashboards for Teachers (manage projects, payouts) and Students (track pledges).
-*   **Stripe Connect:** Automated payouts to teachers when projects are completed.
+### 🎓 For Learners (Students)
+*   **Discover Content:** Browse proposed video projects by language and level (JLPT, CEFR).
+*   **Request Board:** Can't find what you need? Post a request.
+    *   Set a budget.
+    *   Target specific teachers or leave it open.
+    *   **Private Requests:** Option to keep requests between you and a teacher.
+    *   **Negotiation:** Accept or reject counter-offers from teachers.
+*   **Crowdfunding:** Pledge money securely via Stripe to fund projects.
+*   **Track Progress:** Dashboard to view backed projects and watch unlocked videos.
+*   **Rate & Review:** Rate videos to help others find quality teachers.
+
+### 👨‍🏫 For Instructors (Teachers)
+*   **Create Campaigns:** Propose video series with funding goals and delivery timelines.
+*   **Get Paid:** Secure payouts via Stripe Connect once projects are completed.
+*   **Manage Workflow:** Dashboard to track funding, upload videos, and manage requests.
+*   **Build Reputation:** Public profile showing past work and average student ratings.
+*   **Find Work:** Browse student requests and offer to fulfill them.
+
+### ⚙️ Platform Features
+*   **Secure Auth:** JWT authentication with Argon2 password hashing.
+*   **Notifications:** Real-time alerts for funding goals, new videos, and offers.
+*   **Safety:** Automated refunds if a project is cancelled.
+*   **Responsive UI:** Built with React and Tailwind CSS for all devices.
+*   **Account Safety:** "Soft delete" functionality to preserve project history even if a user leaves.
 
 ## Tech Stack
 

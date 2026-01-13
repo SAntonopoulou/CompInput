@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import client from '../api/client';
 import ProjectCard from '../components/ProjectCard';
 
@@ -85,7 +86,13 @@ const ProjectList = () => {
         </div>
       ) : projects.length === 0 ? (
         <div className="text-center py-10 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-lg">No projects found matching your criteria.</p>
+          <p className="text-gray-500 text-lg mb-4">No projects yet?</p>
+          <Link
+            to="/requests"
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"
+          >
+            Be the first to request a video!
+          </Link>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

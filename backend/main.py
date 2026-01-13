@@ -1,16 +1,13 @@
-from dotenv import load_dotenv
-load_dotenv()  # Load environment variables from .env file
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import create_db_and_tables
-from .routers import auth, projects, pledges, videos, users, requests, notifications
+from .routers import auth, projects, pledges, videos, users, requests, notifications, ratings
 
 app = FastAPI()
 
 origins = [
-    "http://localhost:5173", # Vite default
-    "http://localhost:3000", # React default (alternative)
+    "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
@@ -32,6 +29,7 @@ app.include_router(videos.router)
 app.include_router(users.router)
 app.include_router(requests.router)
 app.include_router(notifications.router)
+app.include_router(ratings.router)
 
 @app.get("/")
 def read_root():

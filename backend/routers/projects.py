@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification
+from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus
 from ..security import STRIPE_SECRET_KEY
 from pydantic import BaseModel
 
@@ -51,9 +51,12 @@ class ProjectRead(BaseModel):
     teacher_id: int
     teacher_name: str
     stripe_transfer_id: Optional[str] = None
+    requester_name: Optional[str] = None
+    requester_id: Optional[int] = None
+    origin_request_id: Optional[int] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 @router.post("/", response_model=Project)
 def create_project(
@@ -84,6 +87,7 @@ def create_project(
 def list_projects(
     language: Optional[str] = None,
     level: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
@@ -92,7 +96,12 @@ def list_projects(
     query = select(Project).where(
         (Project.status == ProjectStatus.ACTIVE) | 
         (Project.status == ProjectStatus.FUNDED)
-    ).options(selectinload(Project.teacher))
+    ).where(
+        (Project.is_private == False)
+    ).options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user)
+    )
     
     if language:
         query = query.where(Project.language == language)
@@ -107,6 +116,8 @@ def list_projects(
     for p in projects:
         # Ensure teacher is loaded (lazy loading might happen here)
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
+        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
+        requester_id = p.request.user.id if (p.request and p.request.user) else None
         
         project_read = ProjectRead(
             id=p.id,
@@ -123,7 +134,10 @@ def list_projects(
             updated_at=p.updated_at,
             teacher_id=p.teacher_id,
             teacher_name=teacher_name,
-            stripe_transfer_id=p.stripe_transfer_id
+            stripe_transfer_id=p.stripe_transfer_id,
+            requester_name=requester_name,
+            requester_id=requester_id,
+            origin_request_id=p.origin_request_id
         )
         result.append(project_read)
         
@@ -143,12 +157,17 @@ def list_my_projects(
             detail="Only teachers can list their projects",
         )
     
-    query = select(Project).where(Project.teacher_id == current_user.id).options(selectinload(Project.teacher))
+    query = select(Project).where(Project.teacher_id == current_user.id).options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user)
+    )
     projects = session.exec(query).all()
     
     result = []
     for p in projects:
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
+        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
+        requester_id = p.request.user.id if (p.request and p.request.user) else None
         
         project_read = ProjectRead(
             id=p.id,
@@ -165,7 +184,10 @@ def list_my_projects(
             updated_at=p.updated_at,
             teacher_id=p.teacher_id,
             teacher_name=teacher_name,
-            stripe_transfer_id=p.stripe_transfer_id
+            stripe_transfer_id=p.stripe_transfer_id,
+            requester_name=requester_name,
+            requester_id=requester_id,
+            origin_request_id=p.origin_request_id
         )
         result.append(project_read)
         
@@ -174,16 +196,23 @@ def list_my_projects(
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(
     project_id: int,
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
     Get project details.
     """
-    project = session.get(Project, project_id)
+    project = session.exec(
+        select(Project)
+        .where(Project.id == project_id)
+        .options(selectinload(Project.teacher), selectinload(Project.request).selectinload(Request.user))
+    ).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
     teacher_name = project.teacher.full_name if project.teacher else "Unknown"
+    requester_name = project.request.user.full_name if (project.request and project.request.user) else None
+    requester_id = project.request.user.id if (project.request and project.request.user) else None
     
     return ProjectRead(
         id=project.id,
@@ -200,7 +229,10 @@ def get_project(
         updated_at=project.updated_at,
         teacher_id=project.teacher_id,
         teacher_name=teacher_name,
-        stripe_transfer_id=project.stripe_transfer_id
+        stripe_transfer_id=project.stripe_transfer_id,
+        requester_name=requester_name,
+        requester_id=requester_id,
+        origin_request_id=project.origin_request_id
     )
 
 @router.patch("/{project_id}", response_model=Project)
@@ -224,6 +256,16 @@ def update_project(
         )
         
     project_data = project_in.dict(exclude_unset=True)
+    
+    # Prevent updating goal_amount if project is not in DRAFT status OR if it comes from a request
+    if "goal_amount" in project_data:
+        if project_data["goal_amount"] != project.goal_amount:
+            if project.status != ProjectStatus.DRAFT or project.origin_request_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Cannot change the price of an active project or one created from a request",
+                )
+            
     for key, value in project_data.items():
         setattr(project, key, value)
         
@@ -334,7 +376,8 @@ def cancel_project(
                 notification = Notification(
                     user_id=pledge.user_id,
                     content=f"Project '{project.title}' was cancelled and you have been refunded.",
-                    is_read=False
+                    is_read=False,
+                    link="/"
                 )
                 session.add(notification)
                 
@@ -349,6 +392,25 @@ def cancel_project(
             
     project.status = ProjectStatus.CANCELLED
     session.add(project)
+    
+    # Handle Origin Request Logic
+    if project.origin_request_id:
+        request = session.get(Request, project.origin_request_id)
+        if request:
+            request.status = RequestStatus.OPEN
+            request.target_teacher_id = None # Release the request
+            request.is_private = False # Ensure it is public for other teachers
+            session.add(request)
+            
+            # Notify Student
+            notification = Notification(
+                user_id=request.user_id,
+                content=f"Project '{project.title}' was cancelled. Your request has been reopened for other teachers.",
+                is_read=False,
+                link="/requests"
+            )
+            session.add(notification)
+
     session.commit()
     session.refresh(project)
     

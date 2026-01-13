@@ -15,19 +15,26 @@ const ProjectCard = ({ project }) => {
   };
 
   return (
-    <Link
-      to={`/projects/${project.id}`}
-      className="block bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 overflow-hidden border border-gray-200"
-    >
+    <div className="block bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300 overflow-hidden border border-gray-200">
       <div className="p-6">
         <div className="flex justify-between items-start mb-4">
-          <h3 className="text-xl font-bold text-gray-900 line-clamp-2">
-            {project.title}
-          </h3>
+          <Link to={`/projects/${project.id}`} className="hover:underline">
+            <h3 className="text-xl font-bold text-gray-900 line-clamp-2">
+                {project.title}
+            </h3>
+          </Link>
         </div>
         
         <p className="text-sm text-gray-600 mb-4">
-          by <span className="font-medium text-indigo-600">{project.teacher_name}</span>
+          {project.requester_name ? (
+              <>
+                Requested by <Link to={`/profile/${project.requester_id}`} className="font-medium text-indigo-600 hover:underline">{project.requester_name}</Link>
+              </>
+          ) : (
+              <>
+                by <Link to={`/profile/${project.teacher_id}`} className="font-medium text-indigo-600 hover:underline">{project.teacher_name}</Link>
+              </>
+          )}
         </p>
 
         <div className="flex space-x-2 mb-4">
@@ -52,7 +59,7 @@ const ProjectCard = ({ project }) => {
           </div>
         </div>
       </div>
-    </Link>
+    </div>
   );
 };
 

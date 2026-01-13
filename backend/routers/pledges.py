@@ -31,6 +31,11 @@ class PledgeRead(BaseModel):
     class Config:
         from_attributes = True
 
+class PublicPledgeHistory(BaseModel):
+    project_id: int
+    project_title: str
+    created_at: datetime
+
 @router.post("/", status_code=201)
 def create_pledge(
     pledge_in: PledgeRequest,
@@ -96,6 +101,23 @@ def list_my_pledges(
         ))
     return results
 
+@router.get("/user/{user_id}", response_model=List[PublicPledgeHistory])
+def get_user_pledges(
+    user_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get public history of projects funded by a specific user.
+    """
+    statement = select(Pledge).where(Pledge.user_id == user_id).options(selectinload(Pledge.project)).order_by(Pledge.created_at.desc())
+    pledges = session.exec(statement).all()
+    
+    results = []
+    for p in pledges:
+        if p.project: # Only show if project still exists
+            results.append(PublicPledgeHistory(project_id=p.project_id, project_title=p.project.title, created_at=p.created_at))
+    return results
+
 @router.post("/webhook", include_in_schema=False)
 async def stripe_webhook(
     request: Request,
@@ -141,7 +163,8 @@ async def stripe_webhook(
                 notification = Notification(
                     user_id=project.teacher_id,
                     content=f"Your project '{project.title}' has been fully funded!",
-                    is_read=False
+                    is_read=False,
+                    link=f"/projects/{project.id}"
                 )
                 session.add(notification)
             

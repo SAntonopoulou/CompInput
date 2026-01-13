@@ -68,6 +68,8 @@ const EditProject = () => {
   if (loading) return <div className="p-10 text-center">Loading project...</div>;
   if (error && !project) return <div className="p-10 text-center text-red-600">{error}</div>;
 
+  const isPriceLocked = project?.status !== 'draft' || project?.origin_request_id;
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Edit Project</h1>
@@ -93,10 +95,16 @@ const EditProject = () => {
               name="goal_amount"
               value={formData.goal_amount}
               onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
+              className={`mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 ${
+                isPriceLocked ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''
+              }`}
               required
               min="1"
+              disabled={isPriceLocked}
             />
+            {isPriceLocked && (
+                <p className="mt-1 text-xs text-gray-500">Price cannot be changed for active projects or requests.</p>
+            )}
           </div>
         </div>
 

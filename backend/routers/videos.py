@@ -95,7 +95,8 @@ def create_video(
             notification = Notification(
                 user_id=pledge.user_id,
                 content=f"New video posted in '{project.title}': {video.title}",
-                is_read=False
+                is_read=False,
+                link=f"/projects/{project.id}"
             )
             session.add(notification)
             notified_users.add(pledge.user_id)
@@ -110,6 +111,8 @@ def list_videos(
     offset: int = 0,
     language: Optional[str] = None,
     level: Optional[str] = None,
+    teacher_id: Optional[int] = None,
+    project_id: Optional[int] = None,
     session: Session = Depends(get_session)
 ):
     """
@@ -122,6 +125,10 @@ def list_videos(
         query = query.where(Project.language == language)
     if level:
         query = query.where(Project.level == level)
+    if teacher_id:
+        query = query.where(Project.teacher_id == teacher_id)
+    if project_id:
+        query = query.where(Video.project_id == project_id)
         
     # Eager load project and teacher to avoid N+1
     query = query.options(selectinload(Video.project).selectinload(Project.teacher))

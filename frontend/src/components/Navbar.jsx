@@ -8,7 +8,9 @@ const Navbar = () => {
   const [user, setUser] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const notificationRef = useRef(null);
+  const userMenuRef = useRef(null);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -45,16 +47,19 @@ const Navbar = () => {
     return () => clearInterval(interval);
   }, [token]);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (notificationRef.current && !notificationRef.current.contains(event.target)) {
         setShowNotifications(false);
       }
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [notificationRef]);
+  }, [notificationRef, userMenuRef]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -63,12 +68,18 @@ const Navbar = () => {
     window.location.reload();
   };
 
-  const handleMarkAsRead = async (id) => {
+  const handleNotificationClick = async (notification) => {
     try {
-      await client.patch(`/notifications/${id}/read`);
-      setNotifications(notifications.map(n => 
-        n.id === id ? { ...n, is_read: true } : n
-      ));
+      if (!notification.is_read) {
+        await client.patch(`/notifications/${notification.id}/read`);
+        setNotifications(notifications.map(n => 
+          n.id === notification.id ? { ...n, is_read: true } : n
+        ));
+      }
+      setShowNotifications(false);
+      if (notification.link) {
+          navigate(notification.link);
+      }
     } catch (error) {
       console.error("Failed to mark notification as read", error);
     }
@@ -87,18 +98,22 @@ const Navbar = () => {
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-              <Link
-                to="/"
-                className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-              >
-                Projects
-              </Link>
-              <Link
-                to="/requests"
-                className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-              >
-                Requests
-              </Link>
+              {user && (
+                <>
+                  <Link
+                    to="/"
+                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  >
+                    Projects
+                  </Link>
+                  <Link
+                    to="/requests"
+                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                  >
+                    Requests
+                  </Link>
+                </>
+              )}
               {user?.role === 'teacher' && (
                  <Link
                     to="/teacher/dashboard"
@@ -146,7 +161,7 @@ const Navbar = () => {
                         notifications.map((notification) => (
                           <div
                             key={notification.id}
-                            onClick={() => handleMarkAsRead(notification.id)}
+                            onClick={() => handleNotificationClick(notification)}
                             className={`px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 ${
                               notification.is_read ? 'opacity-50' : 'bg-blue-50'
                             }`}
@@ -162,13 +177,43 @@ const Navbar = () => {
                   )}
                 </div>
 
-                <span className="text-sm text-gray-500">Welcome, {user.full_name}</span>
-                <button
-                  onClick={handleLogout}
-                  className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Logout
-                </button>
+                {/* User Menu */}
+                <div className="relative" ref={userMenuRef}>
+                    <button
+                        onClick={() => setShowUserMenu(!showUserMenu)}
+                        className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none"
+                    >
+                        <span>{user.full_name}</span>
+                        <svg className="ml-1 h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                    </button>
+
+                    {showUserMenu && (
+                        <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
+                            <Link
+                                to={`/profile/${user.id}`}
+                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                onClick={() => setShowUserMenu(false)}
+                            >
+                                Your Profile
+                            </Link>
+                            <Link
+                                to="/settings"
+                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                onClick={() => setShowUserMenu(false)}
+                            >
+                                Settings
+                            </Link>
+                            <button
+                                onClick={handleLogout}
+                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                                Logout
+                            </button>
+                        </div>
+                    )}
+                </div>
               </div>
             ) : (
               <div className="flex space-x-4">

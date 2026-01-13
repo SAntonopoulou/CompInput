@@ -13,6 +13,11 @@ reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl="/auth/token"
 )
 
+reusable_oauth2_optional = OAuth2PasswordBearer(
+    tokenUrl="/auth/token",
+    auto_error=False
+)
+
 class TokenPayload(BaseModel):
     sub: Optional[str] = None
 
@@ -37,4 +42,24 @@ def get_current_user(
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+def get_current_user_optional(
+    token: Optional[str] = Depends(reusable_oauth2_optional),
+    session: Session = Depends(get_session)
+) -> Optional[User]:
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(
+            token, SECRET_KEY, algorithms=[ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+        if not token_data.sub:
+            return None
+        user_id = int(token_data.sub)
+    except (JWTError, ValueError, TypeError):
+        return None
+    
+    user = session.get(User, user_id)
     return user
