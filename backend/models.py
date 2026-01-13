@@ -24,6 +24,12 @@ class PledgeStatus(str, Enum):
     CAPTURED = "captured"     # Money taken (project funded)
     REFUNDED = "refunded"
 
+class RequestStatus(str, Enum):
+    OPEN = "open"
+    NEGOTIATING = "negotiating"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
 # Database Models
 
 class User(SQLModel, table=True):
@@ -45,7 +51,10 @@ class User(SQLModel, table=True):
     projects: List["Project"] = Relationship(back_populates="teacher")
     pledges: List["Pledge"] = Relationship(back_populates="user")
     notifications: List["Notification"] = Relationship(back_populates="user")
-    requests: List["Request"] = Relationship(back_populates="user")
+    requests: List["Request"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"foreign_keys": "Request.user_id"}
+    )
 
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -62,6 +71,10 @@ class Project(SQLModel, table=True):
     
     # For custom/private videos
     is_private: bool = Field(default=False)
+    
+    # Payout info
+    stripe_transfer_id: Optional[str] = None
+    origin_request_id: Optional[int] = None # Link back to the request
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -110,10 +123,22 @@ class Request(SQLModel, table=True):
     language: str
     level: str
     
+    budget: int = Field(default=0) # in cents
+    target_teacher_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    counter_offer_amount: Optional[int] = None # in cents
+    status: RequestStatus = Field(default=RequestStatus.OPEN)
+    
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    user: Optional[User] = Relationship(back_populates="requests")
+    user: Optional[User] = Relationship(
+        back_populates="requests",
+        sa_relationship_kwargs={"foreign_keys": "Request.user_id"}
+    )
+
+    target_teacher: Optional[User] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "Request.target_teacher_id"}
+    )
 
 class Notification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

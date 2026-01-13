@@ -1,37 +1,42 @@
-# IDEs and editors
-.idea/
-.vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-# Virtual environments
-.venv/
-venv/
-ENV/
-
-# Python cache
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.venv
+venv/
+ENV/
 
-# Node dependencies
+# Node.js / Frontend
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
+frontend/dist/
+frontend/.eslintcache
 
-# Build and distribution
-/dist
-/build
-.npm/
+# Environment Variables & Secrets
+.env
+.env.local
 
 # Database
 *.db
 *.sqlite3
 
-# Misc
+# IDEs
+.vscode/
+.idea/
 .DS_Store

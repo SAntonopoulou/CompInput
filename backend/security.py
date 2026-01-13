@@ -1,14 +1,19 @@
 from datetime import datetime, timedelta
 from typing import Any, Union
+import os
 from jose import jwt
 from passlib.context import CryptContext
 
 # In a real application, these should be environment variables
-SECRET_KEY = "CHANGE_THIS_TO_A_SECURE_SECRET_KEY"
+SECRET_KEY = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_SECURE_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Stripe Configuration
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "sk_test_placeholder")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "whsec_placeholder")
+
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)

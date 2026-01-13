@@ -1,3 +1,4 @@
+import stripe
 from datetime import datetime
 from typing import List, Optional
 
@@ -7,8 +8,11 @@ from sqlalchemy.orm import selectinload
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Project, ProjectStatus, User, UserRole
+from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification
+from ..security import STRIPE_SECRET_KEY
 from pydantic import BaseModel
+
+stripe.api_key = STRIPE_SECRET_KEY
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -44,6 +48,7 @@ class ProjectRead(BaseModel):
     updated_at: datetime
     teacher_id: int
     teacher_name: str
+    stripe_transfer_id: Optional[str] = None
 
     class Config:
         orm_mode = True
@@ -114,7 +119,49 @@ def list_projects(
             created_at=p.created_at,
             updated_at=p.updated_at,
             teacher_id=p.teacher_id,
-            teacher_name=teacher_name
+            teacher_name=teacher_name,
+            stripe_transfer_id=p.stripe_transfer_id
+        )
+        result.append(project_read)
+        
+    return result
+
+@router.get("/me", response_model=List[ProjectRead])
+def list_my_projects(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    List projects owned by the current teacher (including drafts).
+    """
+    if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can list their projects",
+        )
+    
+    query = select(Project).where(Project.teacher_id == current_user.id).options(selectinload(Project.teacher))
+    projects = session.exec(query).all()
+    
+    result = []
+    for p in projects:
+        teacher_name = p.teacher.full_name if p.teacher else "Unknown"
+        
+        project_read = ProjectRead(
+            id=p.id,
+            title=p.title,
+            description=p.description,
+            language=p.language,
+            level=p.level,
+            goal_amount=p.goal_amount,
+            current_amount=p.current_amount,
+            deadline=p.deadline,
+            status=p.status,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+            teacher_id=p.teacher_id,
+            teacher_name=teacher_name,
+            stripe_transfer_id=p.stripe_transfer_id
         )
         result.append(project_read)
         
@@ -147,7 +194,8 @@ def get_project(
         created_at=project.created_at,
         updated_at=project.updated_at,
         teacher_id=project.teacher_id,
-        teacher_name=teacher_name
+        teacher_name=teacher_name,
+        stripe_transfer_id=project.stripe_transfer_id
     )
 
 @router.patch("/{project_id}", response_model=Project)
@@ -178,4 +226,125 @@ def update_project(
     session.add(project)
     session.commit()
     session.refresh(project)
+    return project
+
+@router.post("/{project_id}/complete", response_model=Project)
+def complete_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Mark a project as completed and trigger payout.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    if project.teacher_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the project owner can complete the project",
+        )
+        
+    if project.status != ProjectStatus.IN_PROGRESS:
+        raise HTTPException(
+            status_code=400,
+            detail="Project must be IN_PROGRESS to be completed",
+        )
+    
+    # Payout Logic
+    teacher = project.teacher
+    if not teacher.stripe_account_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Teacher has not connected a Stripe account for payouts",
+        )
+        
+    # Calculate payout (Platform fee 5%)
+    platform_fee_percent = 0.05
+    amount_collected = project.current_amount
+    platform_fee = int(amount_collected * platform_fee_percent)
+    payout_amount = amount_collected - platform_fee
+    
+    if payout_amount > 0:
+        try:
+            transfer = stripe.Transfer.create(
+                amount=payout_amount,
+                currency="usd",
+                destination=teacher.stripe_account_id,
+                metadata={"project_id": str(project.id)},
+            )
+            project.stripe_transfer_id = transfer.id
+        except stripe.error.StripeError as e:
+            raise HTTPException(status_code=400, detail=f"Payout failed: {str(e)}")
+    
+    project.status = ProjectStatus.COMPLETED
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    
+    return project
+
+@router.post("/{project_id}/cancel", response_model=Project)
+def cancel_project(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Cancel a project and refund backers.
+    """
+    # Load project with pledges
+    project = session.exec(
+        select(Project)
+        .where(Project.id == project_id)
+        .options(selectinload(Project.pledges))
+    ).first()
+
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+        
+    if project.teacher_id != current_user.id and current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only the project owner can cancel the project",
+        )
+        
+    if project.status == ProjectStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot cancel a completed project",
+        )
+        
+    # Refund Logic
+    for pledge in project.pledges:
+        try:
+            if pledge.status == PledgeStatus.CAPTURED:
+                stripe.Refund.create(payment_intent=pledge.stripe_payment_intent_id)
+                pledge.status = PledgeStatus.REFUNDED
+                session.add(pledge)
+                
+                # Notify Backer
+                notification = Notification(
+                    user_id=pledge.user_id,
+                    content=f"Project '{project.title}' was cancelled and you have been refunded.",
+                    is_read=False
+                )
+                session.add(notification)
+                
+            elif pledge.status == PledgeStatus.AUTHORIZED:
+                stripe.PaymentIntent.cancel(pledge.stripe_payment_intent_id)
+                pledge.status = PledgeStatus.REFUNDED
+                session.add(pledge)
+                
+        except stripe.error.StripeError as e:
+            # Log error but continue trying to refund others
+            print(f"Failed to refund pledge {pledge.id}: {str(e)}")
+            
+    project.status = ProjectStatus.CANCELLED
+    session.add(project)
+    session.commit()
+    session.refresh(project)
+    
     return project

@@ -1,7 +1,10 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlmodel
-passlib[bcrypt]
+python-dotenv
+passlib
+argon2-cffi
 python-jose[cryptography]
 python-multipart
 email-validator
+stripe
