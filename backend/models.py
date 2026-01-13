@@ -40,6 +40,9 @@ class User(SQLModel, table=True):
     role: UserRole = Field(default=UserRole.STUDENT)
     bio: Optional[str] = None
     languages: Optional[str] = None # Comma-separated string
+    intro_video_url: Optional[str] = None
+    sample_video_url: Optional[str] = None
+    avatar_url: Optional[str] = None
     
     # Stripe fields
     stripe_customer_id: Optional[str] = None # For paying students
@@ -57,6 +60,7 @@ class User(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Request.user_id"}
     )
     ratings: List["VideoRating"] = Relationship(back_populates="user")
+    video_comments: List["VideoComment"] = Relationship(back_populates="user")
 
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -64,6 +68,7 @@ class Project(SQLModel, table=True):
     description: str
     language: str = Field(index=True)
     level: str = Field(index=True) # e.g. "N3", "B1"
+    tags: Optional[str] = Field(default=None) # Comma-separated string
     
     goal_amount: int # Stored in cents (e.g. 1000 = $10.00) to avoid float errors
     current_amount: int = Field(default=0)
@@ -89,6 +94,15 @@ class Project(SQLModel, table=True):
     
     videos: List["Video"] = Relationship(back_populates="project")
     pledges: List["Pledge"] = Relationship(back_populates="project")
+    updates: List["ProjectUpdate"] = Relationship(back_populates="project")
+
+class ProjectUpdate(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    project_id: int = Field(foreign_key="project.id")
+    project: Optional[Project] = Relationship(back_populates="updates")
 
 class Video(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -103,6 +117,7 @@ class Video(SQLModel, table=True):
     project: Optional[Project] = Relationship(back_populates="videos")
     
     ratings: List["VideoRating"] = Relationship(back_populates="video")
+    comments: List["VideoComment"] = Relationship(back_populates="video")
 
 class VideoRating(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -115,6 +130,17 @@ class VideoRating(SQLModel, table=True):
     
     video_id: Optional[int] = Field(default=None, foreign_key="video.id")
     video: Optional[Video] = Relationship(back_populates="ratings")
+
+class VideoComment(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    
+    user_id: int = Field(foreign_key="user.id")
+    user: Optional[User] = Relationship(back_populates="video_comments")
+    
+    video_id: int = Field(foreign_key="video.id")
+    video: Optional[Video] = Relationship(back_populates="comments")
 
 class Pledge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

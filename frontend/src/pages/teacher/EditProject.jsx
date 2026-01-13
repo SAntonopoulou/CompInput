@@ -12,8 +12,9 @@ const EditProject = () => {
     language: '',
     level: '',
     goal_amount: 0,
-    delivery_days: 0,
-    status: ''
+    deadline: '',
+    status: '',
+    tags: ''
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -29,8 +30,9 @@ const EditProject = () => {
           language: response.data.language,
           level: response.data.level,
           goal_amount: response.data.goal_amount / 100, // Convert cents to dollars for form
-          delivery_days: response.data.delivery_days || 7,
-          status: response.data.status
+          deadline: response.data.deadline ? response.data.deadline.split('T')[0] : '',
+          status: response.data.status,
+          tags: response.data.tags || ''
         });
       } catch (err) {
         console.error(err);
@@ -54,8 +56,8 @@ const EditProject = () => {
         ...formData,
         goal_amount: Math.round(formData.goal_amount * 100), // Convert dollars to cents
       };
-      if (payload.delivery_days) {
-          payload.delivery_days = parseInt(payload.delivery_days);
+      if (!payload.deadline) {
+        delete payload.deadline; // Don't send empty string
       }
       await client.patch(`/projects/${id}`, payload);
       navigate('/teacher/dashboard');
@@ -103,7 +105,7 @@ const EditProject = () => {
               disabled={isPriceLocked}
             />
             {isPriceLocked && (
-                <p className="mt-1 text-xs text-gray-500">Price cannot be changed for active projects or requests.</p>
+                <p className="mt-1 text-xs text-gray-500">Price cannot be changed for active projects or accepted requests.</p>
             )}
           </div>
         </div>
@@ -170,13 +172,24 @@ const EditProject = () => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Days to Deliver</label>
+            <label className="block text-sm font-medium text-gray-700">Tags (comma separated)</label>
+            <input
+              type="text"
+              name="tags"
+              value={formData.tags}
+              onChange={handleChange}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              placeholder="e.g., Gaming, Grammar, Travel"
+            />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Deadline</label>
           <input
-            type="number"
-            name="delivery_days"
-            value={formData.delivery_days}
+            type="date"
+            name="deadline"
+            value={formData.deadline}
             onChange={handleChange}
-            min="1"
             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
           />
         </div>

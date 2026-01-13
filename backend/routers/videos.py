@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Video, Project, ProjectStatus, User, UserRole, Notification, Pledge, PledgeStatus
+from ..models import Video, Project, ProjectStatus, User, UserRole, Notification, Pledge, PledgeStatus, VideoComment, VideoRating
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -29,6 +29,34 @@ class VideoRead(BaseModel):
     project_id: int
     project_title: str
     teacher_name: str
+
+    class Config:
+        from_attributes = True
+
+class CommentCreate(BaseModel):
+    content: str
+
+class CommentRead(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    user_id: int
+    user_name: str
+
+    class Config:
+        from_attributes = True
+
+class RatingCreate(BaseModel):
+    rating: int
+    comment: Optional[str] = None
+
+class RatingRead(BaseModel):
+    id: int
+    rating: int
+    comment: Optional[str]
+    created_at: datetime
+    user_id: int
+    user_name: str
 
     class Config:
         from_attributes = True
@@ -155,4 +183,128 @@ def list_videos(
             teacher_name=teacher_name
         ))
         
+    return results
+
+@router.post("/{video_id}/comments", response_model=CommentRead)
+def add_comment(
+    video_id: int,
+    comment_in: CommentCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Add a comment to a video.
+    """
+    video = session.get(Video, video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    comment = VideoComment(
+        content=comment_in.content,
+        user_id=current_user.id,
+        video_id=video_id
+    )
+    session.add(comment)
+    session.commit()
+    session.refresh(comment)
+    
+    return CommentRead(
+        id=comment.id,
+        content=comment.content,
+        created_at=comment.created_at,
+        user_id=comment.user_id,
+        user_name=current_user.full_name
+    )
+
+@router.get("/{video_id}/comments", response_model=List[CommentRead])
+def list_comments(
+    video_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    List comments for a video.
+    """
+    statement = select(VideoComment).where(VideoComment.video_id == video_id).options(selectinload(VideoComment.user)).order_by(VideoComment.created_at.asc())
+    comments = session.exec(statement).all()
+    
+    results = []
+    for c in comments:
+        user_name = c.user.full_name if c.user else "Unknown"
+        results.append(CommentRead(
+            id=c.id,
+            content=c.content,
+            created_at=c.created_at,
+            user_id=c.user_id,
+            user_name=user_name
+        ))
+    return results
+
+@router.post("/{video_id}/rate", response_model=VideoRating)
+def rate_video(
+    video_id: int,
+    rating_in: RatingCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Rate a video.
+    """
+    if rating_in.rating < 1 or rating_in.rating > 5:
+        raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
+
+    video = session.get(Video, video_id)
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check if user has already rated this video
+    statement = select(VideoRating).where(
+        VideoRating.video_id == video_id,
+        VideoRating.user_id == current_user.id
+    )
+    existing_rating = session.exec(statement).first()
+    
+    if existing_rating:
+        # Update existing rating
+        existing_rating.rating = rating_in.rating
+        existing_rating.comment = rating_in.comment
+        existing_rating.created_at = datetime.utcnow()
+        session.add(existing_rating)
+        session.commit()
+        session.refresh(existing_rating)
+        return existing_rating
+    
+    # Create new rating
+    rating = VideoRating(
+        video_id=video_id,
+        user_id=current_user.id,
+        rating=rating_in.rating,
+        comment=rating_in.comment
+    )
+    session.add(rating)
+    session.commit()
+    session.refresh(rating)
+    return rating
+
+@router.get("/{video_id}/ratings", response_model=List[RatingRead])
+def list_video_ratings(
+    video_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    List ratings for a video.
+    """
+    statement = select(VideoRating).where(VideoRating.video_id == video_id).options(selectinload(VideoRating.user)).order_by(VideoRating.created_at.desc())
+    ratings = session.exec(statement).all()
+    
+    results = []
+    for r in ratings:
+        user_name = r.user.full_name if r.user else "Unknown"
+        results.append(RatingRead(
+            id=r.id,
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            user_id=r.user_id,
+            user_name=user_name
+        ))
     return results

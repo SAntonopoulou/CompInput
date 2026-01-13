@@ -5,10 +5,11 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus
+from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate
 from ..security import STRIPE_SECRET_KEY
 from pydantic import BaseModel
 
@@ -24,8 +25,9 @@ class ProjectCreate(BaseModel):
     level: str
     goal_amount: int
     delivery_days: int # Replaces deadline
+    tags: Optional[str] = None
 
-class ProjectUpdate(BaseModel):
+class ProjectUpdateModel(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     language: Optional[str] = None
@@ -34,6 +36,7 @@ class ProjectUpdate(BaseModel):
     deadline: Optional[datetime] = None
     delivery_days: Optional[int] = None
     status: Optional[ProjectStatus] = None
+    tags: Optional[str] = None
 
 class ProjectRead(BaseModel):
     id: int
@@ -43,6 +46,7 @@ class ProjectRead(BaseModel):
     level: str
     goal_amount: int
     current_amount: int
+    tags: Optional[str] = None
     deadline: Optional[datetime]
     delivery_days: Optional[int]
     status: ProjectStatus
@@ -53,7 +57,21 @@ class ProjectRead(BaseModel):
     stripe_transfer_id: Optional[str] = None
     requester_name: Optional[str] = None
     requester_id: Optional[int] = None
+    teacher_avatar_url: Optional[str] = None
+    requester_avatar_url: Optional[str] = None
     origin_request_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class UpdateCreate(BaseModel):
+    content: str
+
+class UpdateRead(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    project_id: int
 
     class Config:
         from_attributes = True
@@ -87,6 +105,10 @@ def create_project(
 def list_projects(
     language: Optional[str] = None,
     level: Optional[str] = None,
+    tag: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 9,
+    offset: int = 0,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -107,6 +129,15 @@ def list_projects(
         query = query.where(Project.language == language)
     if level:
         query = query.where(Project.level == level)
+    if tag:
+        query = query.where(Project.tags.contains(tag))
+    if search:
+        query = query.where(or_(
+            Project.title.ilike(f"%{search}%"),
+            Project.description.ilike(f"%{search}%")
+        ))
+    
+    query = query.offset(offset).limit(limit)
         
     projects = session.exec(query).all()
     
@@ -118,6 +149,8 @@ def list_projects(
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
         requester_name = p.request.user.full_name if (p.request and p.request.user) else None
         requester_id = p.request.user.id if (p.request and p.request.user) else None
+        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
+        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
         
         project_read = ProjectRead(
             id=p.id,
@@ -126,6 +159,7 @@ def list_projects(
             language=p.language,
             level=p.level,
             goal_amount=p.goal_amount,
+            tags=p.tags,
             current_amount=p.current_amount,
             deadline=p.deadline,
             delivery_days=p.delivery_days,
@@ -137,6 +171,8 @@ def list_projects(
             stripe_transfer_id=p.stripe_transfer_id,
             requester_name=requester_name,
             requester_id=requester_id,
+            teacher_avatar_url=teacher_avatar_url,
+            requester_avatar_url=requester_avatar_url,
             origin_request_id=p.origin_request_id
         )
         result.append(project_read)
@@ -168,6 +204,8 @@ def list_my_projects(
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
         requester_name = p.request.user.full_name if (p.request and p.request.user) else None
         requester_id = p.request.user.id if (p.request and p.request.user) else None
+        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
+        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
         
         project_read = ProjectRead(
             id=p.id,
@@ -176,6 +214,7 @@ def list_my_projects(
             language=p.language,
             level=p.level,
             goal_amount=p.goal_amount,
+            tags=p.tags,
             current_amount=p.current_amount,
             deadline=p.deadline,
             delivery_days=p.delivery_days,
@@ -187,6 +226,8 @@ def list_my_projects(
             stripe_transfer_id=p.stripe_transfer_id,
             requester_name=requester_name,
             requester_id=requester_id,
+            teacher_avatar_url=teacher_avatar_url,
+            requester_avatar_url=requester_avatar_url,
             origin_request_id=p.origin_request_id
         )
         result.append(project_read)
@@ -213,6 +254,8 @@ def get_project(
     teacher_name = project.teacher.full_name if project.teacher else "Unknown"
     requester_name = project.request.user.full_name if (project.request and project.request.user) else None
     requester_id = project.request.user.id if (project.request and project.request.user) else None
+    teacher_avatar_url = project.teacher.avatar_url if project.teacher else None
+    requester_avatar_url = project.request.user.avatar_url if (project.request and project.request.user) else None
     
     return ProjectRead(
         id=project.id,
@@ -221,6 +264,7 @@ def get_project(
         language=project.language,
         level=project.level,
         goal_amount=project.goal_amount,
+        tags=project.tags,
         current_amount=project.current_amount,
         deadline=project.deadline,
         delivery_days=project.delivery_days,
@@ -232,13 +276,15 @@ def get_project(
         stripe_transfer_id=project.stripe_transfer_id,
         requester_name=requester_name,
         requester_id=requester_id,
+        teacher_avatar_url=teacher_avatar_url,
+        requester_avatar_url=requester_avatar_url,
         origin_request_id=project.origin_request_id
     )
 
 @router.patch("/{project_id}", response_model=Project)
 def update_project(
     project_id: int,
-    project_in: ProjectUpdate,
+    project_in: ProjectUpdateModel,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
@@ -415,3 +461,47 @@ def cancel_project(
     session.refresh(project)
     
     return project
+
+@router.post("/{project_id}/updates", response_model=UpdateRead)
+def add_project_update(
+    project_id: int,
+    update_in: UpdateCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Add a status update to a project.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    if project.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the project owner can post updates")
+        
+    update = ProjectUpdate(
+        content=update_in.content,
+        project_id=project_id
+    )
+    session.add(update)
+    session.commit()
+    session.refresh(update)
+    
+    return UpdateRead(
+        id=update.id,
+        content=update.content,
+        created_at=update.created_at,
+        project_id=update.project_id
+    )
+
+@router.get("/{project_id}/updates", response_model=List[UpdateRead])
+def list_project_updates(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    List updates for a project.
+    """
+    statement = select(ProjectUpdate).where(ProjectUpdate.project_id == project_id).order_by(ProjectUpdate.created_at.desc())
+    updates = session.exec(statement).all()
+    return updates

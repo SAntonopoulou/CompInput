@@ -32,6 +32,8 @@ class UserProfile(BaseModel):
     role: UserRole
     created_at: str
     average_rating: Optional[float] = None
+    intro_video_url: Optional[str] = None
+    sample_video_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -40,6 +42,8 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     bio: Optional[str] = None
     languages: Optional[str] = None
+    intro_video_url: Optional[str] = None
+    sample_video_url: Optional[str] = None
 
 @router.get("/me", response_model=User)
 def get_me(current_user: User = Depends(get_current_user)):
@@ -149,7 +153,9 @@ def get_user_profile(
         languages=user.languages,
         role=user.role,
         created_at=user.created_at.isoformat(),
-        average_rating=average_rating
+        average_rating=average_rating,
+        intro_video_url=user.intro_video_url,
+        sample_video_url=user.sample_video_url
     )
 
 @router.get("/teachers", response_model=List[TeacherRead])

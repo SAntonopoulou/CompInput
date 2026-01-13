@@ -5,29 +5,43 @@ A web application that connects language learners with teachers. Learners can cr
 ## Features
 
 ### 🎓 For Learners (Students)
-*   **Discover Content:** Browse proposed video projects by language and level (JLPT, CEFR).
+*   **Discover Content:** Browse proposed video projects by language and level (JLPT, CEFR). **Search** by title or description.
 *   **Request Board:** Can't find what you need? Post a request.
     *   Set a budget.
     *   Target specific teachers or leave it open.
     *   **Private Requests:** Option to keep requests between you and a teacher.
     *   **Negotiation:** Accept or reject counter-offers from teachers.
 *   **Crowdfunding:** Pledge money securely via Stripe to fund projects.
-*   **Track Progress:** Dashboard to view backed projects and watch unlocked videos.
+*   **Track Progress:** Dashboard to view backed projects, watch embedded videos with auto-generated thumbnails, and read project updates.
 *   **Rate & Review:** Rate videos to help others find quality teachers.
+*   **Profile:** Showcase your **Current Ability** with a demo video link and **Avatar**.
 
 ### 👨‍🏫 For Instructors (Teachers)
 *   **Create Campaigns:** Propose video series with funding goals and delivery timelines.
 *   **Get Paid:** Secure payouts via Stripe Connect once projects are completed.
 *   **Manage Workflow:** Dashboard to track funding, upload videos, and manage requests.
-*   **Build Reputation:** Public profile showing past work and average student ratings.
+*   **Build Reputation:** Public profile showing past work, average ratings, **Intro Video**, and **Teaching Samples**.
 *   **Find Work:** Browse student requests and offer to fulfill them.
+*   **Engage:** Post status updates to projects and reply to student comments on videos.
+
+### 💬 Community & Discovery
+*   **Interaction:** Comment sections on videos for Q&A.
+*   **Tags:** Filter projects by interests (e.g., Gaming, Grammar, Travel).
+*   **Updates:** Teachers can post text updates to keep backers informed during production.
+
+### 🛡️ Admin
+*   **Dashboard:** View platform statistics (Users, Projects, Funds).
+*   **Moderation:** Delete users or cancel projects if necessary.
 
 ### ⚙️ Platform Features
 *   **Secure Auth:** JWT authentication with Argon2 password hashing.
 *   **Notifications:** Real-time alerts for funding goals, new videos, and offers.
 *   **Safety:** Automated refunds if a project is cancelled.
 *   **Responsive UI:** Built with React and Tailwind CSS for all devices.
+*   **UX Enhancements:** Toast notifications and confirmation modals for a smooth experience.
 *   **Account Safety:** "Soft delete" functionality to preserve project history even if a user leaves.
+*   **Scalability:** Pagination and optimized database queries for high performance.
+*   **Search:** Global text search for projects.
 
 ## Tech Stack
 
@@ -78,6 +92,8 @@ SECRET_KEY=your_super_secure_random_secret_key
 STRIPE_SECRET_KEY=sk_test_...  # Get from Stripe Dashboard
 STRIPE_WEBHOOK_SECRET=whsec_... # Get from Stripe CLI or Dashboard
 FRONTEND_URL=http://localhost:5173
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=secure_admin_password
 ```
 
 **Run the Server:**

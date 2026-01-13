@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlmodel import Session
 
 from .database import get_session
-from .models import User
+from .models import User, UserRole
 from .security import ALGORITHM, SECRET_KEY
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -63,3 +63,13 @@ def get_current_user_optional(
     
     user = session.get(User, user_id)
     return user
+
+def get_current_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user doesn't have enough privileges",
+        )
+    return current_user

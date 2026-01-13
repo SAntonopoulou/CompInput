@@ -8,6 +8,7 @@ import ProjectList from './pages/ProjectList';
 import ProjectDetail from './pages/ProjectDetail';
 import RequestList from './pages/RequestList';
 import TeacherRoute from './components/TeacherRoute';
+import AdminRoute from './components/AdminRoute';
 import Dashboard from './pages/teacher/Dashboard';
 import CreateProject from './pages/teacher/CreateProject';
 import EditProject from './pages/teacher/EditProject';
@@ -15,6 +16,7 @@ import StudentDashboard from './pages/student/Dashboard';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Landing from './pages/Landing';
+import AdminDashboard from './pages/admin/AdminDashboard';
 
 function App() {
   const token = localStorage.getItem('token');
@@ -26,22 +28,27 @@ function App() {
           <Navbar />
           <Routes>
             <Route path="/" element={token ? <ProjectList /> : <Landing />} />
-            <Route path="/projects" element={<ProjectList />} />
-            <Route path="/projects/:id" element={<ProjectDetail />} />
-            <Route path="/requests" element={<RequestList />} />
+            <Route path="/projects" element={token ? <ProjectList /> : <Navigate to="/" />} />
+            <Route path="/projects/:id" element={token ? <ProjectDetail /> : <Navigate to="/" />} />
+            <Route path="/requests" element={token ? <RequestList /> : <Navigate to="/" />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/profile/:id" element={<Profile />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/settings" element={token ? <Settings /> : <Navigate to="/" />} />
             
             {/* Student Routes */}
-            <Route path="/student/dashboard" element={<StudentDashboard />} />
+            <Route path="/student/dashboard" element={token ? <StudentDashboard /> : <Navigate to="/" />} />
             
             {/* Teacher Routes */}
             <Route element={<TeacherRoute />}>
               <Route path="/teacher/dashboard" element={<Dashboard />} />
               <Route path="/teacher/create-project" element={<CreateProject />} />
               <Route path="/teacher/projects/:id/edit" element={<EditProject />} />
+            </Route>
+
+            {/* Admin Routes */}
+            <Route element={<AdminRoute />}>
+              <Route path="/admin/dashboard" element={<AdminDashboard />} />
             </Route>
           </Routes>
         </div>

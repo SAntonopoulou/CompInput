@@ -10,6 +10,7 @@ const CreateProject = () => {
     level: 'N5',
     goal_amount: '',
     delivery_days: 7, // Default 7 days
+    tags: ''
   });
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -141,6 +142,18 @@ const CreateProject = () => {
             />
             <p className="mt-1 text-xs text-gray-500">Days after funding to deliver the video.</p>
           </div>
+        </div>
+
+        <div>
+            <label className="block text-sm font-medium text-gray-700">Tags (comma separated)</label>
+            <input
+              type="text"
+              name="tags"
+              value={formData.tags}
+              onChange={handleChange}
+              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              placeholder="e.g., Gaming, Grammar, Travel"
+            />
         </div>
 
         <div className="flex justify-end pt-4">

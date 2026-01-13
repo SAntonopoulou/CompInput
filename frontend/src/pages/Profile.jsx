@@ -9,7 +9,7 @@ const Profile = () => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ bio: '', languages: '' });
+  const [editForm, setEditForm] = useState({ bio: '', languages: '', intro_video_url: '', sample_video_url: '', avatar_url: '' });
 
   useEffect(() => {
     const fetchData = async () => {
@@ -19,7 +19,10 @@ const Profile = () => {
         setProfile(profileRes.data);
         setEditForm({ 
             bio: profileRes.data.bio || '', 
-            languages: profileRes.data.languages || '' 
+            languages: profileRes.data.languages || '',
+            intro_video_url: profileRes.data.intro_video_url || '',
+            sample_video_url: profileRes.data.sample_video_url || '',
+            avatar_url: profileRes.data.avatar_url || ''
         });
 
         // Fetch Current User
@@ -38,8 +41,7 @@ const Profile = () => {
             const videosRes = await client.get('/videos/', { params: { teacher_id: id } });
             setHistory(videosRes.data);
         } else {
-            const pledgesRes = await client.get(`/pledges/user/${id}`);
-            setHistory(pledgesRes.data);
+            setHistory([]);
         }
 
       } catch (error) {
@@ -67,23 +69,38 @@ const Profile = () => {
 
   const isOwner = currentUser && currentUser.id === profile.id;
 
+  const getInitials = (name) => {
+      return name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';
+  };
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
         <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
-          <div>
-            <h3 className="text-lg leading-6 font-medium text-gray-900">
-              {profile.full_name}
-            </h3>
-            <p className="mt-1 max-w-2xl text-sm text-gray-500">
-              {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
-            </p>
-            {profile.role === 'teacher' && profile.average_rating && (
-                <div className="mt-2 flex items-center">
-                    <span className="text-yellow-400 text-lg mr-1">★</span>
-                    <span className="text-sm font-bold text-gray-900">{profile.average_rating} / 5</span>
+          <div className="flex items-center">
+            {profile.avatar_url ? (
+                <img 
+                    src={profile.avatar_url} 
+                    alt={profile.full_name} 
+                    className="h-16 w-16 rounded-full object-cover mr-4"
+                    onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${profile.full_name}&background=random`; }}
+                />
+            ) : (
+                <div className="h-16 w-16 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl mr-4">
+                    {getInitials(profile.full_name)}
                 </div>
             )}
+            <div>
+                <h3 className="text-lg leading-6 font-medium text-gray-900">
+                {profile.full_name}
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm text-gray-500">
+                {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
+                {profile.average_rating && (
+                    <span className="ml-2 text-yellow-500">★ {profile.average_rating}</span>
+                )}
+                </p>
+            </div>
           </div>
           {isOwner && (
               <button
@@ -94,6 +111,20 @@ const Profile = () => {
               </button>
           )}
         </div>
+
+        {/* Intro Video Section */}
+        {!isEditing && profile.intro_video_url && (
+            <div className="px-4 py-5 sm:px-6 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-500 mb-2">Introduction</h4>
+                <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64">
+                    <a href={profile.intro_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center">
+                        <svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>
+                        Watch Intro Video
+                    </a>
+                </div>
+            </div>
+        )}
+
         <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
           <dl className="sm:divide-y sm:divide-gray-200">
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
@@ -127,6 +158,48 @@ const Profile = () => {
                 )}
               </dd>
             </div>
+            
+            {isEditing && (
+                <>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                        <dt className="text-sm font-medium text-gray-500">Avatar URL</dt>
+                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                            <input
+                                type="url"
+                                className="w-full border border-gray-300 rounded-md p-2"
+                                value={editForm.avatar_url}
+                                onChange={(e) => setEditForm({...editForm, avatar_url: e.target.value})}
+                                placeholder="https://example.com/my-avatar.jpg"
+                            />
+                        </dd>
+                    </div>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                        <dt className="text-sm font-medium text-gray-500">Intro Video URL</dt>
+                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                            <input
+                                type="url"
+                                className="w-full border border-gray-300 rounded-md p-2"
+                                value={editForm.intro_video_url}
+                                onChange={(e) => setEditForm({...editForm, intro_video_url: e.target.value})}
+                                placeholder="https://youtube.com/..."
+                            />
+                        </dd>
+                    </div>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                        <dt className="text-sm font-medium text-gray-500">Sample Video URL</dt>
+                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                            <input
+                                type="url"
+                                className="w-full border border-gray-300 rounded-md p-2"
+                                value={editForm.sample_video_url}
+                                onChange={(e) => setEditForm({...editForm, sample_video_url: e.target.value})}
+                                placeholder="https://youtube.com/..."
+                            />
+                        </dd>
+                    </div>
+                </>
+            )}
+
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
               <dt className="text-sm font-medium text-gray-500">Joined</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
@@ -147,35 +220,32 @@ const Profile = () => {
         )}
       </div>
 
+      {/* Sample Video Section */}
+      {!isEditing && profile.sample_video_url && (
+          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Teaching Sample</h3>
+              <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64">
+                  <a href={profile.sample_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center">
+                      <svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>
+                      Watch Sample Lesson
+                  </a>
+              </div>
+          </div>
+      )}
+
       {/* History Section */}
-      <div className="mt-8">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-              {profile.role === 'teacher' ? 'Recent Videos' : 'Backed Projects'}
-          </h3>
-          {history.length > 0 ? (
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {history.map(item => (
-                      <div key={item.id || item.project_id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                          {profile.role === 'teacher' ? (
-                              <>
-                                  <h4 className="font-bold text-gray-900">{item.title}</h4>
-                                  <p className="text-sm text-gray-500">{item.project_title}</p>
-                                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm hover:underline mt-2 block">
-                                      Watch Video
-                                  </a>
-                              </>
-                          ) : (
-                              <>
-                                  <h4 className="font-bold text-gray-900">
-                                      <Link to={`/projects/${item.project_id}`} className="hover:underline">
-                                          {item.project_title}
-                                      </Link>
-                                  </h4>
-                                  <p className="text-xs text-gray-500">
-                                      Backed on {new Date(item.created_at).toLocaleDateString()}
-                                  </p>
-                              </>
-                          )}
+      {profile.role === 'teacher' && (
+          <div className="mt-8">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Videos</h3>
+              {history.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      {history.map(video => (
+                          <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                              <h4 className="font-bold text-gray-900">{video.title}</h4>
+                              <p className="text-sm text-gray-500">{video.project_title}</p>
+                              <a href={video.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm hover:underline mt-2 block">
+                                  Watch Video
+                              </a>
                           </div>
                       ))}
                   </div>
@@ -183,6 +253,7 @@ const Profile = () => {
                   <p className="text-gray-500">No videos found.</p>
               )}
           </div>
+      )}
     </div>
   );
 };
