@@ -1,5 +1,5 @@
 import stripe
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Header, status
 from sqlmodel import Session, select
@@ -132,6 +132,10 @@ async def stripe_webhook(
             
             if project.current_amount >= project.goal_amount and project.status == ProjectStatus.ACTIVE:
                 project.status = ProjectStatus.FUNDED
+                
+                # Calculate actual deadline based on delivery_days
+                if project.delivery_days:
+                    project.deadline = datetime.utcnow() + timedelta(days=project.delivery_days)
                 
                 # NOTIFICATION: Notify Teacher
                 notification = Notification(

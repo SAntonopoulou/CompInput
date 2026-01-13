@@ -42,11 +42,11 @@ def create_video(
     """
     Submit a video for a funded project.
     """
-    # Load project with pledges to notify backers
+    # Load project without pledges (optimization)
+    # We only need basic project info here to verify ownership and status
     project = session.exec(
         select(Project)
         .where(Project.id == video_in.project_id)
-        .options(selectinload(Project.pledges))
     ).first()
 
     if not project:
@@ -82,10 +82,16 @@ def create_video(
         session.add(project)
     
     # NOTIFICATION: Notify Backers
-    # We only notify backers who have successfully paid (CAPTURED)
+    # Optimization: Fetch only CAPTURED pledges directly from DB instead of loading all pledges
+    statement = select(Pledge).where(
+        Pledge.project_id == project.id,
+        Pledge.status == PledgeStatus.CAPTURED
+    )
+    captured_pledges = session.exec(statement).all()
+
     notified_users = set()
-    for pledge in project.pledges:
-        if pledge.status == PledgeStatus.CAPTURED and pledge.user_id not in notified_users:
+    for pledge in captured_pledges:
+        if pledge.user_id not in notified_users:
             notification = Notification(
                 user_id=pledge.user_id,
                 content=f"New video posted in '{project.title}': {video.title}",

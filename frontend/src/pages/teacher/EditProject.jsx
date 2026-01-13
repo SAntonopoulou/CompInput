@@ -12,7 +12,7 @@ const EditProject = () => {
     language: '',
     level: '',
     goal_amount: 0,
-    deadline: '',
+    delivery_days: 0,
     status: ''
   });
   const [loading, setLoading] = useState(true);
@@ -29,7 +29,7 @@ const EditProject = () => {
           language: response.data.language,
           level: response.data.level,
           goal_amount: response.data.goal_amount / 100, // Convert cents to dollars for form
-          deadline: response.data.deadline ? response.data.deadline.split('T')[0] : '',
+          delivery_days: response.data.delivery_days || 7,
           status: response.data.status
         });
       } catch (err) {
@@ -54,8 +54,8 @@ const EditProject = () => {
         ...formData,
         goal_amount: Math.round(formData.goal_amount * 100), // Convert dollars to cents
       };
-      if (!payload.deadline) {
-        delete payload.deadline; // Don't send empty string
+      if (payload.delivery_days) {
+          payload.delivery_days = parseInt(payload.delivery_days);
       }
       await client.patch(`/projects/${id}`, payload);
       navigate('/teacher/dashboard');
@@ -162,12 +162,13 @@ const EditProject = () => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Deadline</label>
+          <label className="block text-sm font-medium text-gray-700">Days to Deliver</label>
           <input
-            type="date"
-            name="deadline"
-            value={formData.deadline}
+            type="number"
+            name="delivery_days"
+            value={formData.delivery_days}
             onChange={handleChange}
+            min="1"
             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3"
           />
         </div>

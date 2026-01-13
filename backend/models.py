@@ -67,6 +67,7 @@ class Project(SQLModel, table=True):
     current_amount: int = Field(default=0)
     
     deadline: Optional[datetime] = None
+    delivery_days: Optional[int] = None # Number of days to deliver after funding
     status: ProjectStatus = Field(default=ProjectStatus.DRAFT)
     
     # For custom/private videos

@@ -23,7 +23,7 @@ class ProjectCreate(BaseModel):
     language: str
     level: str
     goal_amount: int
-    deadline: Optional[datetime] = None
+    delivery_days: int # Replaces deadline
 
 class ProjectUpdate(BaseModel):
     title: Optional[str] = None
@@ -32,6 +32,7 @@ class ProjectUpdate(BaseModel):
     level: Optional[str] = None
     goal_amount: Optional[int] = None
     deadline: Optional[datetime] = None
+    delivery_days: Optional[int] = None
     status: Optional[ProjectStatus] = None
 
 class ProjectRead(BaseModel):
@@ -43,6 +44,7 @@ class ProjectRead(BaseModel):
     goal_amount: int
     current_amount: int
     deadline: Optional[datetime]
+    delivery_days: Optional[int]
     status: ProjectStatus
     created_at: datetime
     updated_at: datetime
@@ -71,7 +73,7 @@ def create_project(
     project = Project(
         **project_in.dict(),
         teacher_id=current_user.id,
-        status=ProjectStatus.DRAFT
+        status=ProjectStatus.ACTIVE # Immediately active
     )
     session.add(project)
     session.commit()
@@ -115,6 +117,7 @@ def list_projects(
             goal_amount=p.goal_amount,
             current_amount=p.current_amount,
             deadline=p.deadline,
+            delivery_days=p.delivery_days,
             status=p.status,
             created_at=p.created_at,
             updated_at=p.updated_at,
@@ -156,6 +159,7 @@ def list_my_projects(
             goal_amount=p.goal_amount,
             current_amount=p.current_amount,
             deadline=p.deadline,
+            delivery_days=p.delivery_days,
             status=p.status,
             created_at=p.created_at,
             updated_at=p.updated_at,
@@ -190,6 +194,7 @@ def get_project(
         goal_amount=project.goal_amount,
         current_amount=project.current_amount,
         deadline=project.deadline,
+        delivery_days=project.delivery_days,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,
