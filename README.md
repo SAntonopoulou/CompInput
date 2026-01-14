@@ -28,6 +28,7 @@ A web application that connects language learners with teachers. Learners can cr
 *   **Interaction:** Comment sections on videos for Q&A.
 *   **Tags:** Filter projects by interests (e.g., Gaming, Grammar, Travel).
 *   **Updates:** Teachers can post text updates to keep backers informed during production.
+*   **Related Projects:** Smart suggestions for similar content on project pages.
 
 ### 🛡️ Admin
 *   **Dashboard:** View platform statistics (Users, Projects, Funds).
@@ -122,6 +123,10 @@ Create a `.env` file in the `frontend/` directory:
 # frontend/.env
 VITE_API_URL=http://localhost:8000
 VITE_STRIPE_PUBLIC_KEY=pk_test_... # Get from Stripe Dashboard
+VITE_TIKTOK_URL=https://www.tiktok.com
+VITE_INSTAGRAM_URL=https://www.instagram.com
+VITE_BLUESKY_URL=https://bsky.app
+VITE_X_URL=https://x.com
 ```
 
 **Run the Frontend:**
@@ -150,3 +155,14 @@ stripe listen --forward-to localhost:8000/pledges/webhook
 When registering a new user via the frontend:
 *   Select **Student** to browse and pledge.
 *   Select **Teacher** to create projects and receive payouts.
+
+## 🚀 Project Status & To Do
+
+The application is currently **Feature Complete (MVP)**. All core logic for the marketplace, learning management, and administration is implemented.
+
+### Infrastructure To-Do List
+- [ ] **Email Notifications:** Integrate SendGrid, Mailgun, or AWS SES to notify users of funding events and messages when they are offline.
+- [ ] **File Hosting:** Integrate AWS S3 or Cloudinary to allow direct file uploads for avatars and videos instead of URL pasting.
+- [ ] **Password Reset:** Implement secure token generation and email links for account recovery.
+- [ ] **Deployment:** Create `Dockerfile` and `docker-compose.yml` for containerized deployment and set up a production PostgreSQL database.
+- [ ] **Legal Compliance:** Add Terms of Service and Privacy Policy pages (required for Stripe).

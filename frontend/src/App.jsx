@@ -17,6 +17,7 @@ import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Landing from './pages/Landing';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import Footer from './components/Footer';
 
 function App() {
   const token = localStorage.getItem('token');
@@ -24,33 +25,36 @@ function App() {
   return (
     <ToastProvider>
       <Router>
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen bg-gray-100 flex flex-col">
           <Navbar />
-          <Routes>
-            <Route path="/" element={token ? <ProjectList /> : <Landing />} />
-            <Route path="/projects" element={token ? <ProjectList /> : <Navigate to="/" />} />
-            <Route path="/projects/:id" element={token ? <ProjectDetail /> : <Navigate to="/" />} />
-            <Route path="/requests" element={token ? <RequestList /> : <Navigate to="/" />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route path="/profile/:id" element={<Profile />} />
-            <Route path="/settings" element={token ? <Settings /> : <Navigate to="/" />} />
-            
-            {/* Student Routes */}
-            <Route path="/student/dashboard" element={token ? <StudentDashboard /> : <Navigate to="/" />} />
-            
-            {/* Teacher Routes */}
-            <Route element={<TeacherRoute />}>
-              <Route path="/teacher/dashboard" element={<Dashboard />} />
-              <Route path="/teacher/create-project" element={<CreateProject />} />
-              <Route path="/teacher/projects/:id/edit" element={<EditProject />} />
-            </Route>
+          <div className="flex-grow">
+            <Routes>
+              <Route path="/" element={token ? <ProjectList /> : <Landing />} />
+              <Route path="/projects" element={token ? <ProjectList /> : <Navigate to="/" />} />
+              <Route path="/projects/:id" element={token ? <ProjectDetail /> : <Navigate to="/" />} />
+              <Route path="/requests" element={token ? <RequestList /> : <Navigate to="/" />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/profile/:id" element={<Profile />} />
+              <Route path="/settings" element={token ? <Settings /> : <Navigate to="/" />} />
+              
+              {/* Student Routes */}
+              <Route path="/student/dashboard" element={token ? <StudentDashboard /> : <Navigate to="/" />} />
+              
+              {/* Teacher Routes */}
+              <Route element={<TeacherRoute />}>
+                <Route path="/teacher/dashboard" element={<Dashboard />} />
+                <Route path="/teacher/create-project" element={<CreateProject />} />
+                <Route path="/teacher/projects/:id/edit" element={<EditProject />} />
+              </Route>
 
-            {/* Admin Routes */}
-            <Route element={<AdminRoute />}>
-              <Route path="/admin/dashboard" element={<AdminDashboard />} />
-            </Route>
-          </Routes>
+              {/* Admin Routes */}
+              <Route element={<AdminRoute />}>
+                <Route path="/admin/dashboard" element={<AdminDashboard />} />
+              </Route>
+            </Routes>
+          </div>
+          <Footer />
         </div>
       </Router>
     </ToastProvider>

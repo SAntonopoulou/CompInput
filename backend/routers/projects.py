@@ -281,6 +281,85 @@ def get_project(
         origin_request_id=project.origin_request_id
     )
 
+@router.get("/{project_id}/related", response_model=List[ProjectRead])
+def get_related_projects(
+    project_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get related projects based on language and level/tags.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Find candidates: Same language, Active/Funded, Not Private, Not Current Project
+    query = select(Project).where(
+        Project.language == project.language,
+        Project.id != project_id,
+        (Project.status == ProjectStatus.ACTIVE) | (Project.status == ProjectStatus.FUNDED),
+        Project.is_private == False
+    ).options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user)
+    ).limit(10) 
+
+    candidates = session.exec(query).all()
+    
+    # Simple scoring: +2 for same level, +1 for matching tags
+    scored_candidates = []
+    project_tags = set(project.tags.split(',')) if project.tags else set()
+    
+    for p in candidates:
+        score = 0
+        if p.level == project.level:
+            score += 2
+        
+        p_tags = set(p.tags.split(',')) if p.tags else set()
+        if project_tags and p_tags:
+            overlap = project_tags.intersection(p_tags)
+            score += len(overlap)
+            
+        scored_candidates.append((score, p))
+    
+    # Sort by score desc and take top 3
+    scored_candidates.sort(key=lambda x: x[0], reverse=True)
+    
+    results = []
+    for _, p in scored_candidates[:3]:
+        # Reuse the mapping logic or create a helper function in a real refactor
+        teacher_name = p.teacher.full_name if p.teacher else "Unknown"
+        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
+        requester_id = p.request.user.id if (p.request and p.request.user) else None
+        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
+        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
+
+        results.append(ProjectRead(
+            id=p.id,
+            title=p.title,
+            description=p.description,
+            language=p.language,
+            level=p.level,
+            goal_amount=p.goal_amount,
+            tags=p.tags,
+            current_amount=p.current_amount,
+            deadline=p.deadline,
+            delivery_days=p.delivery_days,
+            status=p.status,
+            created_at=p.created_at,
+            updated_at=p.updated_at,
+            teacher_id=p.teacher_id,
+            teacher_name=teacher_name,
+            stripe_transfer_id=p.stripe_transfer_id,
+            requester_name=requester_name,
+            requester_id=requester_id,
+            teacher_avatar_url=teacher_avatar_url,
+            requester_avatar_url=requester_avatar_url,
+            origin_request_id=p.origin_request_id
+        ))
+        
+    return results
+
 @router.patch("/{project_id}", response_model=Project)
 def update_project(
     project_id: int,
@@ -354,8 +433,8 @@ def complete_project(
             detail="Teacher has not connected a Stripe account for payouts",
         )
         
-    # Calculate payout (Platform fee 5%)
-    platform_fee_percent = 0.05
+    # Calculate payout (Platform fee 15%)
+    platform_fee_percent = 0.15
     amount_collected = project.current_amount
     platform_fee = int(amount_collected * platform_fee_percent)
     payout_amount = amount_collected - platform_fee

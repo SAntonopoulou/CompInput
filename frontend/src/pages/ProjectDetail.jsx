@@ -51,12 +51,9 @@ const ProjectDetail = () => {
             setVideos(videosRes.data);
         }
 
-        // Fetch Related Projects (Mock logic for now as backend endpoint isn't fully implemented in prompt instructions but requested in frontend)
-        // Ideally: const relatedRes = await client.get(`/projects/${id}/related`);
-        // For now, we can just fetch list and filter client side or skip if not critical for this step's compilation
-        // Let's try to fetch list and filter manually to simulate "More Like This"
-        const allProjects = await client.get('/projects/', { params: { language: response.data.language } });
-        setRelatedProjects(allProjects.data.filter(p => p.id !== parseInt(id)).slice(0, 3));
+        // Fetch Related Projects
+        const relatedRes = await client.get(`/projects/${id}/related`);
+        setRelatedProjects(relatedRes.data);
 
       } catch (err) {
         console.error(err);
