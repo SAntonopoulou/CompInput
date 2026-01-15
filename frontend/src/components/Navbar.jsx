@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
+import logo from '../assets/Logo - Rectangle.png';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -101,8 +102,8 @@ const Navbar = () => {
         <div className="flex justify-between h-16">
           <div className="flex">
             <div className="flex-shrink-0 flex items-center">
-              <Link to="/" className="text-xl font-bold text-indigo-600">
-                CompInput
+              <Link to="/">
+                <img className="h-8 w-auto" src={logo} alt="CompInput Logo" />
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
@@ -110,13 +111,13 @@ const Navbar = () => {
                 <>
                   <Link
                     to="/"
-                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                   >
                     Projects
                   </Link>
                   <Link
                     to="/requests"
-                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                   >
                     Requests
                   </Link>
@@ -125,7 +126,7 @@ const Navbar = () => {
               {user?.role === 'teacher' && (
                  <Link
                     to="/teacher/dashboard"
-                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                 >
                     Dashboard
                 </Link>
@@ -133,7 +134,7 @@ const Navbar = () => {
               {user?.role === 'student' && (
                  <Link
                     to="/student/dashboard"
-                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                 >
                     My Pledges
                 </Link>
@@ -141,7 +142,7 @@ const Navbar = () => {
               {user?.role === 'admin' && (
                  <Link
                     to="/admin/dashboard"
-                    className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
+                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
                 >
                     Admin
                 </Link>
@@ -155,14 +156,14 @@ const Navbar = () => {
                     <label htmlFor="search" className="sr-only">Search</label>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                            <svg className="h-5 w-5 text-kotoba-text/70" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                                 <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
                             </svg>
                         </div>
                         <input
                             id="search"
                             name="search"
-                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                            className="block w-full pl-10 pr-3 py-2 border border-kotoba-text/40 rounded-md leading-5 bg-white placeholder-kotoba-text/60 focus:outline-none focus:placeholder-kotoba-text/80 focus:ring-1 focus:ring-kotoba-secondary focus:border-kotoba-secondary sm:text-sm"
                             placeholder="Search projects"
                             type="search"
                             value={searchQuery}
@@ -180,35 +181,35 @@ const Navbar = () => {
                 <div className="relative" ref={notificationRef}>
                   <button
                     onClick={() => setShowNotifications(!showNotifications)}
-                    className="bg-white p-1 rounded-full text-gray-400 hover:text-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    className="bg-white p-1 rounded-full text-kotoba-text/70 hover:text-kotoba-text focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-kotoba-secondary"
                   >
                     <span className="sr-only">View notifications</span>
                     <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                     </svg>
                     {unreadCount > 0 && (
-                      <span className="absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-red-400"></span>
+                      <span className="absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-kotoba-accent"></span>
                     )}
                   </button>
 
                   {showNotifications && (
                     <div className="origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                      <div className="px-4 py-2 border-b border-gray-100 font-medium text-gray-700">
+                      <div className="px-4 py-2 border-b border-kotoba-text/40 font-medium text-kotoba-text">
                         Notifications
                       </div>
                       {notifications.length === 0 ? (
-                        <div className="px-4 py-2 text-sm text-gray-500">No notifications</div>
+                        <div className="px-4 py-2 text-sm text-kotoba-text">No notifications</div>
                       ) : (
                         notifications.map((notification) => (
                           <div
                             key={notification.id}
                             onClick={() => handleNotificationClick(notification)}
-                            className={`px-4 py-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0 ${
-                              notification.is_read ? 'opacity-50' : 'bg-blue-50'
+                            className={`px-4 py-3 hover:bg-kotoba-background cursor-pointer border-b border-kotoba-text/40 last:border-0 ${
+                              notification.is_read ? 'opacity-50' : 'bg-kotoba-background'
                             }`}
                           >
-                            <p className="text-sm text-gray-900">{notification.content}</p>
-                            <p className="text-xs text-gray-500 mt-1">
+                            <p className="text-sm text-kotoba-text">{notification.content}</p>
+                            <p className="text-xs text-kotoba-text/70 mt-1">
                               {new Date(notification.created_at).toLocaleDateString()}
                             </p>
                           </div>
@@ -222,7 +223,7 @@ const Navbar = () => {
                 <div className="relative" ref={userMenuRef}>
                     <button
                         onClick={() => setShowUserMenu(!showUserMenu)}
-                        className="flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 focus:outline-none"
+                        className="flex items-center text-sm font-medium text-kotoba-text hover:text-kotoba-primary focus:outline-none"
                     >
                         {user.avatar_url ? (
                             <img 
@@ -232,7 +233,7 @@ const Navbar = () => {
                                 onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${user.full_name}&background=random`; }}
                             />
                         ) : (
-                            <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
+                            <div className="h-8 w-8 rounded-full bg-kotoba-primary/20 flex items-center justify-center text-kotoba-primary font-bold text-xs">
                                 {user.full_name ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
                             </div>
                         )}
@@ -242,21 +243,21 @@ const Navbar = () => {
                         <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
                             <Link
                                 to={`/profile/${user.id}`}
-                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                className="block px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
                                 onClick={() => setShowUserMenu(false)}
                             >
                                 Your Profile
                             </Link>
                             <Link
                                 to="/settings"
-                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                className="block px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
                                 onClick={() => setShowUserMenu(false)}
                             >
                                 Settings
                             </Link>
                             <button
                                 onClick={handleLogout}
-                                className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                className="block w-full text-left px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
                             >
                                 Logout
                             </button>
@@ -268,13 +269,13 @@ const Navbar = () => {
               <div className="flex space-x-4">
                 <Link
                   to="/login"
-                  className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium"
+                  className="text-kotoba-text hover:text-kotoba-primary px-3 py-2 rounded-md text-sm font-medium"
                 >
                   Login
                 </Link>
                 <Link
                   to="/register"
-                  className="bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-md text-sm font-medium"
+                  className="bg-kotoba-secondary text-kotoba-text hover:bg-kotoba-secondary-dark px-4 py-2 rounded-md text-sm font-medium"
                 >
                   Register
                 </Link>

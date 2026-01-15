@@ -7,11 +7,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#16561D',
-        secondary: '#D6A42F',
-        accent: '#F89973',
-        background: '#F4F1E9',
-        'text-color': '#2B463C',
+        'kotoba-primary': '#16561D',
+        'kotoba-secondary': '#D6A42F',
+        'kotoba-secondary-dark': '#B58C27',
+        'kotoba-accent': '#F89973',
+        'kotoba-background': '#F4F1E9',
+        'kotoba-text': '#2B463C',
       },
     },
   },
