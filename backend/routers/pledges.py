@@ -10,7 +10,7 @@ import traceback
 import os
 
 from ..database import get_session
-from ..models import Pledge, Project, User, PledgeStatus, ProjectStatus, Notification
+from ..models import Pledge, Project, User, PledgeStatus, ProjectStatus, Notification, ProjectRating
 from ..deps import get_current_user
 from ..security import STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 
@@ -34,6 +34,7 @@ class PledgeRead(BaseModel):
     project_id: int
     project_title: str
     project_status: ProjectStatus
+    has_rated: bool = False
 
     class Config:
         from_attributes = True
@@ -74,7 +75,7 @@ def create_pledge_checkout_session(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
-                    'currency': 'eur', # Changed to EUR
+                    'currency': 'eur',
                     'product_data': {
                         'name': f"Pledge for '{project.title}'",
                     },
@@ -85,10 +86,9 @@ def create_pledge_checkout_session(
             mode='payment',
             success_url=f"{FRONTEND_URL}/student/dashboard?payment=success",
             cancel_url=f"{FRONTEND_URL}/projects/{project.id}?payment=cancelled",
-            client_reference_id=str(pending_pledge.id) # Link our pledge to the Stripe session
+            client_reference_id=str(pending_pledge.id)
         )
         
-        # Save the checkout session ID to our pledge record
         pending_pledge.checkout_session_id = checkout_session.id
         session.add(pending_pledge)
         session.commit()
@@ -112,6 +112,16 @@ def list_my_pledges(
         project_title = p.project.title if p.project else "Unknown Project"
         project_status = p.project.status if p.project else ProjectStatus.CANCELLED
         
+        has_rated = False
+        if p.project and p.project.status == ProjectStatus.COMPLETED:
+            rating_exists = session.exec(
+                select(ProjectRating)
+                .where(ProjectRating.project_id == p.project_id)
+                .where(ProjectRating.user_id == current_user.id)
+            ).first()
+            if rating_exists:
+                has_rated = True
+
         results.append(PledgeRead(
             id=p.id,
             amount=p.amount,
@@ -119,7 +129,8 @@ def list_my_pledges(
             created_at=p.created_at,
             project_id=p.project_id,
             project_title=project_title,
-            project_status=project_status
+            project_status=project_status,
+            has_rated=has_rated
         ))
     return results
 
@@ -138,34 +149,25 @@ def get_user_pledges(
     return results
 
 def handle_checkout_session_completed(session: Session, data_object: dict):
-    """
-    Handles the 'checkout.session.completed' event.
-    """
     client_reference_id = data_object.get('client_reference_id')
-
     if not client_reference_id:
         logger.error("Webhook error: checkout.session.completed event is missing 'client_reference_id'.")
         return
 
     try:
         pledge_id = int(client_reference_id)
-        logger.info(f"Processing pledge_id: {pledge_id} from client_reference_id.")
-        
         pledge = session.get(Pledge, pledge_id)
         if not pledge or pledge.status != PledgeStatus.PENDING:
             status = pledge.status if pledge else 'Not Found'
             logger.warning(f"Webhook for non-pending or non-existent pledge ID: {pledge_id}. Status: {status}")
             return
 
-        logger.info(f"Found pending pledge {pledge.id}. Updating status to CAPTURED.")
         pledge.status = PledgeStatus.CAPTURED
         pledge.payment_intent_id = data_object.get('payment_intent')
         
         project = session.get(Project, pledge.project_id)
         if project:
-            logger.info(f"Updating project {project.id}. Current funding: {project.current_funding}. Pledge amount: {pledge.amount}")
             project.current_funding += pledge.amount
-            logger.info(f"New project funding: {project.current_funding}")
             session.add(project)
             
             notification = Notification(
@@ -177,7 +179,6 @@ def handle_checkout_session_completed(session: Session, data_object: dict):
 
             if project.current_funding >= project.funding_goal and project.status == ProjectStatus.FUNDING:
                 project.status = ProjectStatus.SUCCESSFUL
-                logger.info(f"Project {project.id} has been fully funded.")
                 goal_notification = Notification(
                     user_id=project.teacher_id,
                     content=f"Congratulations! Your project '{project.title}' has been fully funded!",
@@ -188,18 +189,13 @@ def handle_checkout_session_completed(session: Session, data_object: dict):
             logger.error(f"CRITICAL: Could not find project with ID {pledge.project_id} for pledge {pledge.id}")
         
         session.commit()
-        logger.info(f"Successfully captured and committed pledge {pledge_id}")
     except Exception as e:
         logger.error(f"Error processing checkout.session.completed for pledge_id {client_reference_id}: {e}\n{traceback.format_exc()}")
         session.rollback()
 
 def handle_account_updated(session: Session, data_object: dict):
-    """
-    Handles the 'account.updated' event.
-    """
     try:
         stripe_account_id = data_object['id']
-        
         teacher = session.exec(select(User).where(User.stripe_account_id == stripe_account_id)).first()
         if teacher:
             teacher.charges_enabled = data_object['charges_enabled']
@@ -212,23 +208,18 @@ def handle_account_updated(session: Session, data_object: dict):
             
             notification = Notification(
                 user_id=teacher.id,
-                content="Your Stripe account status has been updated. Please check your Stripe Dashboard for details.",
+                content="Your Stripe account status has been updated.",
                 link="/teacher/dashboard"
             )
             session.add(notification)
             session.commit()
-            logger.info(f"Updated Stripe account status for teacher {teacher.id}")
     except Exception as e:
         logger.error(f"Error processing account.updated: {e}\n{traceback.format_exc()}")
         session.rollback()
 
 def handle_charge_refunded(session: Session, data_object: dict):
-    """
-    Handles the 'charge.refunded' event.
-    """
     try:
         payment_intent_id = data_object['payment_intent']
-        
         pledge_to_refund = session.exec(select(Pledge).where(Pledge.payment_intent_id == payment_intent_id)).first()
         if pledge_to_refund and pledge_to_refund.status != PledgeStatus.REFUNDED:
             pledge_to_refund.status = PledgeStatus.REFUNDED
@@ -238,7 +229,6 @@ def handle_charge_refunded(session: Session, data_object: dict):
                 project.current_funding -= pledge_to_refund.amount
             
             session.commit()
-            logger.info(f"Processed refund for pledge {pledge_to_refund.id}")
     except Exception as e:
         logger.error(f"Error processing charge.refunded: {e}\n{traceback.format_exc()}")
         session.rollback()
@@ -249,32 +239,25 @@ async def stripe_webhook(
     stripe_signature: str = Header(None),
     session: Session = Depends(get_session)
 ):
-    logger.info("Webhook endpoint hit.")
     payload = await request.body()
     try:
         event = stripe.Webhook.construct_event(
             payload, stripe_signature, STRIPE_WEBHOOK_SECRET
         )
     except ValueError:
-        logger.error("⚠️ Webhook payload parsing failed.")
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError:
-        logger.error("⚠️ Webhook signature verification failed. Check your STRIPE_WEBHOOK_SECRET in the .env file.")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     event_type = event['type']
     data = event['data']['object']
-    logger.info(f"Received event: {event_type}")
 
     if event_type == 'checkout.session.completed':
         handle_checkout_session_completed(session, data)
-
     elif event_type == 'account.updated':
         handle_account_updated(session, data)
-
     elif event_type == 'charge.refunded':
         handle_charge_refunded(session, data)
-
     else:
         logger.info(f"Unhandled event type: {event_type}")
 

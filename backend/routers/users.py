@@ -2,12 +2,12 @@ import stripe
 import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select, update, func
+from sqlmodel import Session, select, func
 from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, PledgeStatus, RequestStatus, Video, VideoRating
+from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating
 from ..security import STRIPE_SECRET_KEY
 
 stripe.api_key = STRIPE_SECRET_KEY
@@ -32,6 +32,7 @@ class UserProfile(BaseModel):
     average_rating: Optional[float] = None
     intro_video_url: Optional[str] = None
     sample_video_url: Optional[str] = None
+    avatar_url: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -42,12 +43,10 @@ class UserUpdate(BaseModel):
     languages: Optional[str] = None
     intro_video_url: Optional[str] = None
     sample_video_url: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 @router.get("/me", response_model=User)
 def get_me(current_user: User = Depends(get_current_user)):
-    """
-    Get current user details.
-    """
     return current_user
 
 @router.patch("/me", response_model=User)
@@ -56,9 +55,6 @@ def update_me(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """
-    Update current user profile.
-    """
     user_data = user_in.dict(exclude_unset=True)
     for key, value in user_data.items():
         setattr(current_user, key, value)
@@ -73,42 +69,21 @@ def delete_me(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """
-    Safely delete the current user account.
-    Reassigns related data to a system 'Deleted User' account.
-    """
-    statement = select(User).where(User.email == "deleted@system")
-    deleted_user = session.exec(statement).first()
-    
+    deleted_user = session.exec(select(User).where(User.email == "deleted@system")).first()
     if not deleted_user:
-        deleted_user = User(
-            email="deleted@system",
-            hashed_password="deleted",
-            full_name="Deleted User",
-            role=UserRole.STUDENT,
-            bio="This user has deleted their account."
-        )
+        # This is a fallback, should ideally be seeded
+        deleted_user = User(email="deleted@system", hashed_password="deleted", full_name="Deleted User", role=UserRole.STUDENT)
         session.add(deleted_user)
         session.commit()
         session.refresh(deleted_user)
     
-    statement = select(Project).where(Project.teacher_id == current_user.id)
-    projects = session.exec(statement).all()
-    for project in projects:
+    # Reassign projects, pledges, requests
+    for project in current_user.taught_projects:
         project.teacher_id = deleted_user.id
-        session.add(project)
-        
-    statement = select(Pledge).where(Pledge.user_id == current_user.id)
-    pledges = session.exec(statement).all()
-    for pledge in pledges:
+    for pledge in current_user.pledges:
         pledge.user_id = deleted_user.id
-        session.add(pledge)
-        
-    statement = select(Request).where(Request.user_id == current_user.id)
-    requests = session.exec(statement).all()
-    for request in requests:
+    for request in current_user.requests:
         request.user_id = deleted_user.id
-        session.add(request)
 
     session.delete(current_user)
     session.commit()
@@ -119,16 +94,13 @@ def get_user_profile(
     user_id: int,
     session: Session = Depends(get_session)
 ):
-    """
-    Get public profile of a user.
-    """
     user = session.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     average_rating = None
     if user.role == UserRole.TEACHER:
-        statement = select(func.avg(VideoRating.rating)).join(Video).join(Project).where(Project.teacher_id == user.id)
+        statement = select(func.avg(ProjectRating.rating)).join(Project).where(Project.teacher_id == user.id)
         result = session.exec(statement).first()
         if result:
             average_rating = round(result, 1)
@@ -142,7 +114,8 @@ def get_user_profile(
         created_at=user.created_at.isoformat(),
         average_rating=average_rating,
         intro_video_url=user.intro_video_url,
-        sample_video_url=user.sample_video_url
+        sample_video_url=user.sample_video_url,
+        avatar_url=user.avatar_url
     )
 
 @router.get("/teachers", response_model=List[TeacherRead])
@@ -150,9 +123,6 @@ def search_teachers(
     query: str = Query(..., min_length=1),
     session: Session = Depends(get_session)
 ):
-    """
-    Search for teachers by name.
-    """
     statement = select(User).where(User.role == UserRole.TEACHER).where(User.full_name.ilike(f"%{query}%"))
     teachers = session.exec(statement).all()
     return [TeacherRead(id=t.id, full_name=t.full_name) for t in teachers]
@@ -162,14 +132,8 @@ def create_stripe_onboarding_link(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """
-    Create a Stripe Connect onboarding link for a teacher.
-    """
     if current_user.role != UserRole.TEACHER:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can create Stripe onboarding links.",
-        )
+        raise HTTPException(status_code=403, detail="Only teachers can create Stripe onboarding links.")
     
     try:
         if not current_user.stripe_account_id:
@@ -187,6 +151,5 @@ def create_stripe_onboarding_link(
         )
         
         return {"onboarding_url": account_link.url}
-
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))

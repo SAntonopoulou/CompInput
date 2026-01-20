@@ -3,7 +3,7 @@ from enum import Enum
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
 
-# Enums for strict state management
+# Enums
 class UserRole(str, Enum):
     STUDENT = "student"
     TEACHER = "teacher"
@@ -39,29 +39,24 @@ class User(SQLModel, table=True):
     full_name: str
     role: UserRole = Field(default=UserRole.STUDENT)
     bio: Optional[str] = None
-    languages: Optional[str] = None # Comma-separated string
+    languages: Optional[str] = None
     intro_video_url: Optional[str] = None
     sample_video_url: Optional[str] = None
     avatar_url: Optional[str] = None
     
-    # Stripe fields
-    stripe_customer_id: Optional[str] = None # For paying students
-    stripe_account_id: Optional[str] = None  # For receiving teachers
+    stripe_customer_id: Optional[str] = None
+    stripe_account_id: Optional[str] = None
     charges_enabled: bool = Field(default=False)
     payouts_enabled: bool = Field(default=False)
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    # Relationships
-    projects: List["Project"] = Relationship(back_populates="teacher")
+    taught_projects: List["Project"] = Relationship(back_populates="teacher")
     pledges: List["Pledge"] = Relationship(back_populates="user")
     notifications: List["Notification"] = Relationship(back_populates="user")
-    requests: List["Request"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"foreign_keys": "Request.user_id"}
-    )
-    ratings: List["VideoRating"] = Relationship(back_populates="user")
+    requests: List["Request"] = Relationship(back_populates="user", sa_relationship_kwargs={"foreign_keys": "Request.user_id"})
+    project_ratings: List["ProjectRating"] = Relationship(back_populates="user")
     video_comments: List["VideoComment"] = Relationship(back_populates="user")
 
 class Project(SQLModel, table=True):
@@ -69,34 +64,33 @@ class Project(SQLModel, table=True):
     title: str
     description: str
     language: str = Field(index=True)
-    level: str = Field(index=True) # e.g. "N3", "B1"
-    tags: Optional[str] = Field(default=None) # Comma-separated string
+    level: str = Field(index=True)
+    tags: Optional[str] = None
     
-    funding_goal: int # Stored in cents (e.g. 1000 = $10.00) to avoid float errors
+    funding_goal: int
     current_funding: int = Field(default=0)
     
     deadline: Optional[datetime] = None
-    delivery_days: Optional[int] = None # Number of days to deliver after funding
+    delivery_days: Optional[int] = None
     status: ProjectStatus = Field(default=ProjectStatus.DRAFT)
     
-    # For custom/private videos
     is_private: bool = Field(default=False)
     
-    # Payout info
     stripe_transfer_id: Optional[str] = None
-    origin_request_id: Optional[int] = Field(default=None, foreign_key="request.id") # Link back to the request
+    origin_request_id: Optional[int] = Field(default=None, foreign_key="request.id")
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     
     teacher_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    teacher: Optional[User] = Relationship(back_populates="projects")
+    teacher: Optional[User] = Relationship(back_populates="taught_projects")
     
     request: Optional["Request"] = Relationship(sa_relationship_kwargs={"foreign_keys": "Project.origin_request_id"})
     
     videos: List["Video"] = Relationship(back_populates="project")
     pledges: List["Pledge"] = Relationship(back_populates="project")
     updates: List["ProjectUpdate"] = Relationship(back_populates="project")
+    ratings: List["ProjectRating"] = Relationship(back_populates="project")
 
 class ProjectUpdate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -110,28 +104,27 @@ class Video(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     url: str
-    platform: str = Field(default="youtube") # youtube, vimeo, etc.
-    duration: Optional[int] = None # in seconds
+    platform: str = Field(default="youtube")
+    duration: Optional[int] = None
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     project_id: Optional[int] = Field(default=None, foreign_key="project.id")
     project: Optional[Project] = Relationship(back_populates="videos")
     
-    ratings: List["VideoRating"] = Relationship(back_populates="video")
     comments: List["VideoComment"] = Relationship(back_populates="video")
 
-class VideoRating(SQLModel, table=True):
+class ProjectRating(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    rating: int # 1-5
+    rating: int
     comment: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    user_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    user: Optional[User] = Relationship(back_populates="ratings")
+    user_id: int = Field(foreign_key="user.id")
+    user: Optional[User] = Relationship(back_populates="project_ratings")
     
-    video_id: Optional[int] = Field(default=None, foreign_key="video.id")
-    video: Optional[Video] = Relationship(back_populates="ratings")
+    project_id: int = Field(foreign_key="project.id")
+    project: Optional[Project] = Relationship(back_populates="ratings")
 
 class VideoComment(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -146,7 +139,7 @@ class VideoComment(SQLModel, table=True):
 
 class Pledge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    amount: int # in cents
+    amount: int
     status: PledgeStatus = Field(default=PledgeStatus.PENDING)
     
     checkout_session_id: Optional[str] = Field(default=None, unique=True, index=True, nullable=True)
@@ -161,33 +154,24 @@ class Pledge(SQLModel, table=True):
     project: Optional[Project] = Relationship(back_populates="pledges")
 
 class Request(SQLModel, table=True):
-    """
-    Requests made by students for specific content.
-    Teachers can browse these and offer to fulfill them (creating a Project).
-    """
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     description: str
     language: str
     level: str
     
-    budget: int = Field(default=0) # in cents
+    budget: int = Field(default=0)
     target_teacher_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    counter_offer_amount: Optional[int] = None # in cents
+    counter_offer_amount: Optional[int] = None
     status: RequestStatus = Field(default=RequestStatus.OPEN)
     is_private: bool = Field(default=False)
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    user: Optional[User] = Relationship(
-        back_populates="requests",
-        sa_relationship_kwargs={"foreign_keys": "Request.user_id"}
-    )
+    user: Optional[User] = Relationship(back_populates="requests", sa_relationship_kwargs={"foreign_keys": "Request.user_id"})
 
-    target_teacher: Optional[User] = Relationship(
-        sa_relationship_kwargs={"foreign_keys": "Request.target_teacher_id"}
-    )
+    target_teacher: Optional[User] = Relationship(sa_relationship_kwargs={"foreign_keys": "Request.target_teacher_id"})
 
 class Notification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

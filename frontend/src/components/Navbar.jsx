@@ -2,16 +2,14 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import logo from '../assets/Logo - Rectangle.png';
+import Notifications from './Notifications'; // Import the new component
 
 const Navbar = () => {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
   const [user, setUser] = useState(null);
-  const [notifications, setNotifications] = useState([]);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const notificationRef = useRef(null);
   const userMenuRef = useRef(null);
 
   useEffect(() => {
@@ -32,36 +30,14 @@ const Navbar = () => {
   }, [token]);
 
   useEffect(() => {
-    const fetchNotifications = async () => {
-      if (token) {
-        try {
-          const response = await client.get('/notifications/');
-          setNotifications(response.data);
-        } catch (error) {
-          console.error("Failed to fetch notifications", error);
-        }
-      }
-    };
-
-    fetchNotifications();
-    // Poll every 60 seconds
-    const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
-  }, [token]);
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
     const handleClickOutside = (event) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
-        setShowNotifications(false);
-      }
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setShowUserMenu(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [notificationRef, userMenuRef]);
+  }, [userMenuRef]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -70,31 +46,12 @@ const Navbar = () => {
     window.location.reload();
   };
 
-  const handleNotificationClick = async (notification) => {
-    try {
-      if (!notification.is_read) {
-        await client.patch(`/notifications/${notification.id}/read`);
-        setNotifications(notifications.map(n => 
-          n.id === notification.id ? { ...n, is_read: true } : n
-        ));
-      }
-      setShowNotifications(false);
-      if (notification.link) {
-          navigate(notification.link);
-      }
-    } catch (error) {
-      console.error("Failed to mark notification as read", error);
-    }
-  };
-
   const handleSearch = (e) => {
       e.preventDefault();
       if (searchQuery.trim()) {
           navigate(`/projects?search=${encodeURIComponent(searchQuery)}`);
       }
   };
-
-  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
     <nav className="bg-white shadow-md sticky top-0 z-50">
@@ -177,49 +134,8 @@ const Navbar = () => {
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             {user ? (
               <div className="flex items-center space-x-4">
-                {/* Notification Bell */}
-                <div className="relative" ref={notificationRef}>
-                  <button
-                    onClick={() => setShowNotifications(!showNotifications)}
-                    className="bg-white p-1 rounded-full text-kotoba-text/70 hover:text-kotoba-text focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-kotoba-secondary"
-                  >
-                    <span className="sr-only">View notifications</span>
-                    <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                    </svg>
-                    {unreadCount > 0 && (
-                      <span className="absolute top-0 right-0 block h-2 w-2 rounded-full ring-2 ring-white bg-kotoba-accent"></span>
-                    )}
-                  </button>
+                <Notifications />
 
-                  {showNotifications && (
-                    <div className="origin-top-right absolute right-0 mt-2 w-80 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-                      <div className="px-4 py-2 border-b border-kotoba-text/40 font-medium text-kotoba-text">
-                        Notifications
-                      </div>
-                      {notifications.length === 0 ? (
-                        <div className="px-4 py-2 text-sm text-kotoba-text">No notifications</div>
-                      ) : (
-                        notifications.map((notification) => (
-                          <div
-                            key={notification.id}
-                            onClick={() => handleNotificationClick(notification)}
-                            className={`px-4 py-3 hover:bg-kotoba-background cursor-pointer border-b border-kotoba-text/40 last:border-0 ${
-                              notification.is_read ? 'opacity-50' : 'bg-kotoba-background'
-                            }`}
-                          >
-                            <p className="text-sm text-kotoba-text">{notification.content}</p>
-                            <p className="text-xs text-kotoba-text/70 mt-1">
-                              {new Date(notification.created_at).toLocaleDateString()}
-                            </p>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* User Menu */}
                 <div className="relative" ref={userMenuRef}>
                     <button
                         onClick={() => setShowUserMenu(!showUserMenu)}

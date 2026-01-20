@@ -83,7 +83,7 @@ const EditProject = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label htmlFor="funding_goal" className="block text-sm font-medium text-gray-700">Funding Goal ($)</label>
+            <label htmlFor="funding_goal" className="block text-sm font-medium text-gray-700">Funding Goal (€)</label>
             <input
               type="number"
               name="funding_goal"

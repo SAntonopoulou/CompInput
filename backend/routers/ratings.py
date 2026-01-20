@@ -7,9 +7,9 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import VideoRating, Video, User, Pledge, PledgeStatus, Project
+from ..models import ProjectRating, User, Pledge, PledgeStatus, Project, ProjectStatus
 
-router = APIRouter(prefix="/videos", tags=["ratings"])
+router = APIRouter(prefix="/projects", tags=["ratings"])
 
 class RatingCreate(BaseModel):
     rating: int
@@ -26,43 +26,50 @@ class RatingRead(BaseModel):
     class Config:
         from_attributes = True
 
-@router.post("/{video_id}/rate", response_model=VideoRating)
-def rate_video(
-    video_id: int,
+@router.post("/{project_id}/rate", response_model=ProjectRating)
+def rate_project(
+    project_id: int,
     rating_in: RatingCreate,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Rate a video.
+    Rate a project. A user can only rate a project once.
     """
-    if rating_in.rating < 1 or rating_in.rating > 5:
+    if not (1 <= rating_in.rating <= 5):
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
-    video = session.get(Video, video_id)
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found")
-    
-    # Check if user has already rated this video
-    statement = select(VideoRating).where(
-        VideoRating.video_id == video_id,
-        VideoRating.user_id == current_user.id
-    )
-    existing_rating = session.exec(statement).first()
-    
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.status != ProjectStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Only completed projects can be rated.")
+
+    # Verify the user is a backer of this project
+    pledge = session.exec(
+        select(Pledge).where(
+            Pledge.project_id == project_id,
+            Pledge.user_id == current_user.id,
+            Pledge.status == PledgeStatus.CAPTURED
+        )
+    ).first()
+    if not pledge:
+        raise HTTPException(status_code=403, detail="You must be a backer to rate this project.")
+
+    # Verify the user has not already rated this project
+    existing_rating = session.exec(
+        select(ProjectRating).where(
+            ProjectRating.project_id == project_id,
+            ProjectRating.user_id == current_user.id
+        )
+    ).first()
     if existing_rating:
-        # Update existing rating
-        existing_rating.rating = rating_in.rating
-        existing_rating.comment = rating_in.comment
-        existing_rating.created_at = datetime.utcnow()
-        session.add(existing_rating)
-        session.commit()
-        session.refresh(existing_rating)
-        return existing_rating
-    
-    # Create new rating
-    rating = VideoRating(
-        video_id=video_id,
+        raise HTTPException(status_code=400, detail="You have already rated this project.")
+
+    # Create the new rating
+    rating = ProjectRating(
+        project_id=project_id,
         user_id=current_user.id,
         rating=rating_in.rating,
         comment=rating_in.comment
@@ -72,15 +79,15 @@ def rate_video(
     session.refresh(rating)
     return rating
 
-@router.get("/{video_id}/ratings", response_model=List[RatingRead])
-def list_video_ratings(
-    video_id: int,
+@router.get("/{project_id}/ratings", response_model=List[RatingRead])
+def list_project_ratings(
+    project_id: int,
     session: Session = Depends(get_session)
 ):
     """
-    List ratings for a video.
+    List all ratings for a specific project.
     """
-    statement = select(VideoRating).where(VideoRating.video_id == video_id).order_by(VideoRating.created_at.desc())
+    statement = select(ProjectRating).where(ProjectRating.project_id == project_id).order_by(ProjectRating.created_at.desc())
     ratings = session.exec(statement).all()
     
     results = []

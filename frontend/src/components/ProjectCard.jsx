@@ -21,10 +21,10 @@ const ProjectCard = ({ project }) => {
         <div className="mb-4">
           <div className="flex justify-between items-center mb-1">
             <span className="text-sm font-bold text-indigo-600">
-              ${(project.current_funding / 100).toFixed(2)}
+              €{(project.current_funding / 100).toFixed(2)}
             </span>
             <span className="text-sm text-gray-500">
-              raised of ${(project.funding_goal / 100).toFixed(2)}
+              raised of €{(project.funding_goal / 100).toFixed(2)}
             </span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2.5">

@@ -13,13 +13,14 @@ const StarIcon = ({ color, size }) => (
     </svg>
   );
 
-const RateVideo = ({ videoId, onRatingSuccess }) => {
-  const [rating, setRating] = useState(0);
-  const [hover, setHover] = useState(0);
-  const [comment, setComment] = useState('');
+const RateProject = ({ projectId, onRatingSuccess, initialRating, initialComment }) => {
+  const [rating, setRating] = useState(initialRating || 0);
+  const [hover, setHover] = useState(initialRating || 0);
+  const [comment, setComment] = useState(initialComment || '');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasRated, setHasRated] = useState(initialRating > 0);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -31,13 +32,14 @@ const RateVideo = ({ videoId, onRatingSuccess }) => {
     setIsSubmitting(true);
 
     try {
-      await client.post(`/videos/${videoId}/rate`, {
+      await client.post(`/projects/${projectId}/rate`, {
         rating,
         comment,
       });
       setSuccess(true);
+      setHasRated(true);
       if (onRatingSuccess) {
-        onRatingSuccess();
+        onRatingSuccess({ rating, comment });
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'An error occurred while submitting your rating.');
@@ -46,17 +48,31 @@ const RateVideo = ({ videoId, onRatingSuccess }) => {
     }
   };
 
-  if (success) {
+  if (hasRated) {
     return (
       <div className="p-4 my-4 bg-green-100 border border-green-400 text-green-700 rounded">
-        <p className="font-bold">Thank you for your rating!</p>
+        <p className="font-bold mb-2">You have rated this project:</p>
+        <div className="flex items-center">
+          {[...Array(5)].map((_, index) => {
+            const ratingValue = index + 1;
+            return (
+              <StarIcon
+                key={index}
+                color={ratingValue <= rating ? '#ffc107' : '#e4e5e9'}
+                size={20}
+              />
+            );
+          })}
+          <span className="ml-2 text-green-800 font-semibold">{rating} / 5</span>
+        </div>
+        {comment && <p className="mt-2 text-sm italic">"{comment}"</p>}
       </div>
     );
   }
 
   return (
     <div className="p-4 my-4 border rounded-lg shadow-md">
-      <h3 className="text-lg font-semibold mb-2">Rate this video</h3>
+      <h3 className="text-lg font-semibold mb-2">Rate this project</h3>
       <form onSubmit={handleSubmit}>
         <div className="flex items-center mb-4">
           {[...Array(5)].map((_, index) => {
@@ -102,4 +118,4 @@ const RateVideo = ({ videoId, onRatingSuccess }) => {
   );
 };
 
-export default RateVideo;
+export default RateProject;

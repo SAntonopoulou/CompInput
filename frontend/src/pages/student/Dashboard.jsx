@@ -42,7 +42,7 @@ const StudentDashboard = () => {
   const handleConfirmCompletion = async (projectId) => {
     try {
       await client.post(`/projects/${projectId}/confirm-completion`);
-      addToast("Project completion confirmed! The teacher will now be paid.", "success");
+      addToast("Project completion confirmed! You can now rate the project.", "success");
       fetchPledges();
     } catch (error) {
       console.error("Failed to confirm completion", error);
@@ -51,9 +51,9 @@ const StudentDashboard = () => {
   };
 
   const formatCurrency = (amountInCents) => {
-    return new Intl.NumberFormat('en-US', {
+    return new Intl.NumberFormat('de-DE', {
       style: 'currency',
-      currency: 'USD',
+      currency: 'EUR',
     }).format(amountInCents / 100);
   };
 
@@ -130,6 +130,11 @@ const StudentDashboard = () => {
                       >
                         Confirm Completion
                       </button>
+                    )}
+                    {pledge.project_status === 'completed' && !pledge.has_rated && (
+                      <Link to={`/projects/${pledge.project_id}`} className="text-indigo-600 hover:text-indigo-900">
+                        Rate Project
+                      </Link>
                     )}
                   </td>
                 </tr>

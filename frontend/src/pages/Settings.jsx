@@ -61,11 +61,11 @@ const Settings = () => {
         <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
           <div className="px-4 py-5 sm:p-6">
             <h3 className="text-lg leading-6 font-medium text-gray-900">
-              Payouts Setup
+              Payouts
             </h3>
             <div className="mt-2 max-w-xl text-sm text-gray-500">
               {user.charges_enabled ? (
-                <p>Your payout account is active and ready to receive funds.</p>
+                <p>Your payout account is active. You can manage your account details on Stripe.</p>
               ) : (
                 <p>Connect with Stripe to receive payments for your funded projects.</p>
               )}
@@ -76,7 +76,7 @@ const Settings = () => {
                 onClick={handleStripeOnboarding}
                 className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm"
               >
-                {user.charges_enabled ? 'Manage Payout Account' : 'Set up Payouts'}
+                {user.charges_enabled ? 'Edit Your Payouts' : 'Set up Payouts'}
               </button>
             </div>
           </div>
