@@ -163,7 +163,9 @@ const Dashboard = () => {
                 <div className="px-4 py-4 sm:px-6">
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col">
-                        <p className="text-sm font-medium text-indigo-600 truncate">{project.title}</p>
+                        <Link to={`/projects/${project.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 truncate">
+                          {project.title}
+                        </Link>
                         <p className="text-xs text-gray-500">Status: {project.status}</p>
                     </div>
                     <div className="ml-2 flex-shrink-0 flex space-x-2">

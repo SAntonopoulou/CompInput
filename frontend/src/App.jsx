@@ -19,6 +19,7 @@ import Landing from './pages/Landing';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
+import TeacherReviews from './pages/TeacherReviews'; // Import the new component
 
 function App() {
   const token = localStorage.getItem('token');
@@ -41,6 +42,7 @@ function App() {
                 <Route path="/requests" element={<RequestList />} />
                 <Route path="/profile/:id" element={<Profile />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/teacher/:id/reviews" element={<TeacherReviews />} />
                 
                 {/* Student Routes */}
                 <Route path="/student/dashboard" element={<StudentDashboard />} />

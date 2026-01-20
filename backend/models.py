@@ -120,6 +120,9 @@ class ProjectRating(SQLModel, table=True):
     comment: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
+    teacher_response: Optional[str] = None
+    response_created_at: Optional[datetime] = None
+    
     user_id: int = Field(foreign_key="user.id")
     user: Optional[User] = Relationship(back_populates="project_ratings")
     

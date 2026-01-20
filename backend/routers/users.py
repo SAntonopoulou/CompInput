@@ -1,8 +1,10 @@
 import stripe
 import os
 from typing import List, Optional
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
+from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
 
 from ..database import get_session
@@ -15,6 +17,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+# Pydantic Models
 class OnboardingResponse(BaseModel):
     onboarding_url: str
 
@@ -45,6 +48,23 @@ class UserUpdate(BaseModel):
     sample_video_url: Optional[str] = None
     avatar_url: Optional[str] = None
 
+class ProjectInfoForRating(BaseModel):
+    id: int
+    title: str
+    funding_goal: int
+    language: str
+    level: str
+    tags: Optional[str] = None
+
+class TeacherRatingRead(BaseModel):
+    rating: int
+    comment: Optional[str]
+    created_at: datetime
+    project: ProjectInfoForRating
+    teacher_response: Optional[str] = None
+    response_created_at: Optional[datetime] = None
+
+# API Endpoints
 @router.get("/me", response_model=User)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
@@ -71,13 +91,11 @@ def delete_me(
 ):
     deleted_user = session.exec(select(User).where(User.email == "deleted@system")).first()
     if not deleted_user:
-        # This is a fallback, should ideally be seeded
         deleted_user = User(email="deleted@system", hashed_password="deleted", full_name="Deleted User", role=UserRole.STUDENT)
         session.add(deleted_user)
         session.commit()
         session.refresh(deleted_user)
     
-    # Reassign projects, pledges, requests
     for project in current_user.taught_projects:
         project.teacher_id = deleted_user.id
     for pledge in current_user.pledges:
@@ -117,6 +135,43 @@ def get_user_profile(
         sample_video_url=user.sample_video_url,
         avatar_url=user.avatar_url
     )
+
+@router.get("/{user_id}/ratings", response_model=List[TeacherRatingRead])
+def get_teacher_ratings(
+    user_id: int,
+    session: Session = Depends(get_session)
+):
+    teacher = session.get(User, user_id)
+    if not teacher or teacher.role != UserRole.TEACHER:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    statement = (
+        select(ProjectRating)
+        .join(Project)
+        .where(Project.teacher_id == user_id)
+        .options(selectinload(ProjectRating.project))
+        .order_by(ProjectRating.created_at.desc())
+    )
+    
+    ratings = session.exec(statement).all()
+    
+    return [
+        TeacherRatingRead(
+            rating=r.rating,
+            comment=r.comment,
+            created_at=r.created_at,
+            project=ProjectInfoForRating(
+                id=r.project.id,
+                title=r.project.title,
+                funding_goal=r.project.funding_goal,
+                language=r.project.language,
+                level=r.project.level,
+                tags=r.project.tags
+            ),
+            teacher_response=r.teacher_response,
+            response_created_at=r.response_created_at
+        ) for r in ratings
+    ]
 
 @router.get("/teachers", response_model=List[TeacherRead])
 def search_teachers(

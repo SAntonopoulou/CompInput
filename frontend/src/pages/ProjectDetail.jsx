@@ -2,10 +2,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import PledgeForm from '../components/PledgeForm';
-import RateProject from '../components/RateProject'; // Corrected import
+import RateProject from '../components/RateProject';
+import RespondToReview from '../components/RespondToReview';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import { getVideoThumbnail } from '../utils/video';
+
+const StarIcon = ({ color = 'currentColor', size = 20 }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
+      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+    </svg>
+);
 
 const ProjectDetail = () => {
   const { id } = useParams();
@@ -13,6 +20,7 @@ const ProjectDetail = () => {
   const [project, setProject] = useState(null);
   const [videos, setVideos] = useState([]);
   const [updates, setUpdates] = useState([]);
+  const [reviews, setReviews] = useState([]);
   const [relatedProjects, setRelatedProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -27,22 +35,25 @@ const ProjectDetail = () => {
 
   const fetchData = async () => {
     try {
-      const response = await client.get(`/projects/${id}`);
-      setProject(response.data);
+      const projectRes = await client.get(`/projects/${id}`);
+      setProject(projectRes.data);
       
       if (token) {
           try {
               const userRes = await client.get('/users/me');
               setCurrentUser(userRes.data);
-          } catch (e) {
-              console.error("Failed to fetch user");
-          }
+          } catch (e) { console.error("Failed to fetch user"); }
       }
 
       const updatesRes = await client.get(`/projects/${id}/updates`);
       setUpdates(updatesRes.data);
+
+      if (['completed', 'successful'].includes(projectRes.data.status)) {
+        const reviewsRes = await client.get(`/ratings/project/${id}`);
+        setReviews(reviewsRes.data);
+      }
       
-      if (['in_progress', 'completed', 'successful', 'pending_confirmation'].includes(response.data.status)) {
+      if (['in_progress', 'completed', 'successful', 'pending_confirmation'].includes(projectRes.data.status)) {
           const videosRes = await client.get('/videos/', { params: { project_id: id } });
           setVideos(videosRes.data);
       }
@@ -71,7 +82,7 @@ const ProjectDetail = () => {
     try {
       const res = await client.post(`/projects/${id}/confirm-completion`);
       setProject(res.data);
-      addToast("Project completion confirmed! Thank you for your support.", "success");
+      addToast("Project completion confirmed!", "success");
       setTimeout(() => {
         ratingSectionRef.current?.scrollIntoView({ behavior: 'smooth' });
         addToast("Now you can rate this project.", "info");
@@ -82,16 +93,15 @@ const ProjectDetail = () => {
     }
   };
 
-  const handleRatingSuccess = (newRating) => {
-    setProject(prev => ({ ...prev, my_rating: newRating }));
-    addToast("Thank you for your rating!", "success");
+  const handleRatingSuccess = () => {
+    fetchData();
   };
 
   const handlePostUpdate = async () => {
       if (!newUpdate.trim()) return;
       try {
-          const res = await client.post(`/projects/${id}/updates`, { content: newUpdate });
-          setUpdates([res.data, ...updates]);
+          await client.post(`/projects/${id}/updates`, { content: newUpdate });
+          fetchData();
           setNewUpdate('');
           addToast("Update posted!", 'success');
       } catch (error) {
@@ -100,20 +110,13 @@ const ProjectDetail = () => {
       }
   };
 
-  const handleEditUpdate = (update) => {
-    setEditingUpdateId(update.id);
-    setEditingContent(update.content);
-  };
-
-  const handleCancelEdit = () => {
-    setEditingUpdateId(null);
-    setEditingContent('');
-  };
+  const handleEditUpdate = (update) => { setEditingUpdateId(update.id); setEditingContent(update.content); };
+  const handleCancelEdit = () => { setEditingUpdateId(null); setEditingContent(''); };
 
   const handleSaveUpdate = async (updateId) => {
     try {
-      const res = await client.patch(`/projects/updates/${updateId}`, { content: editingContent });
-      setUpdates(updates.map(u => u.id === updateId ? res.data : u));
+      await client.patch(`/projects/updates/${updateId}`, { content: editingContent });
+      fetchData();
       handleCancelEdit();
       addToast("Update saved!", "success");
     } catch (error) {
@@ -130,7 +133,6 @@ const ProjectDetail = () => {
   const formatCurrency = (amountInCents) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amountInCents / 100);
   const isOwner = currentUser && currentUser.id === project.teacher_id;
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
-
   const canRate = project.is_backer && project.status === 'completed';
 
   return (
@@ -158,13 +160,45 @@ const ProjectDetail = () => {
 
           {canRate && (
             <div ref={ratingSectionRef} className="mt-8 border-t border-gray-200 pt-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Rate this Project</h2>
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Your Rating</h2>
               <RateProject 
                 projectId={project.id} 
                 onRatingSuccess={handleRatingSuccess}
                 initialRating={project.my_rating?.rating}
                 initialComment={project.my_rating?.comment}
               />
+            </div>
+          )}
+
+          {reviews.length > 0 && (
+            <div className="mt-8 border-t border-gray-200 pt-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Reviews</h2>
+              <div className="space-y-6">
+                {reviews.map((review) => (
+                  <div key={review.id} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        {[...Array(5)].map((_, i) => <StarIcon key={i} color={i < review.rating ? '#ffc107' : '#e4e5e9'} />)}
+                        <span className="ml-3 font-semibold">{review.user_name}</span>
+                      </div>
+                      <span className="text-sm text-gray-500">{new Date(review.created_at).toLocaleDateString()}</span>
+                    </div>
+                    {review.comment && <p className="mt-3 text-gray-700 italic">"{review.comment}"</p>}
+                    
+                    {review.teacher_response && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <p className="text-sm font-semibold text-gray-800">Response from {project.teacher_name}:</p>
+                        <p className="text-sm text-gray-600 italic">"{review.teacher_response}"</p>
+                        <p className="text-xs text-gray-400 text-right">{new Date(review.response_created_at).toLocaleDateString()}</p>
+                      </div>
+                    )}
+
+                    {isOwner && !review.teacher_response && (
+                      <RespondToReview ratingId={review.id} onResponseSuccess={fetchData} />
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

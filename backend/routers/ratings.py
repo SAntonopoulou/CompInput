@@ -4,16 +4,20 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from pydantic import BaseModel
+from sqlalchemy.orm import selectinload
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import ProjectRating, User, Pledge, PledgeStatus, Project, ProjectStatus
+from ..models import ProjectRating, User, Pledge, PledgeStatus, Project, ProjectStatus, Notification
 
-router = APIRouter(prefix="/projects", tags=["ratings"])
+router = APIRouter(prefix="/ratings", tags=["ratings"])
 
 class RatingCreate(BaseModel):
     rating: int
     comment: Optional[str] = None
+
+class RatingResponse(BaseModel):
+    response: str
 
 class RatingRead(BaseModel):
     id: int
@@ -22,20 +26,19 @@ class RatingRead(BaseModel):
     created_at: datetime
     user_id: int
     user_name: str
+    teacher_response: Optional[str] = None
+    response_created_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
 
-@router.post("/{project_id}/rate", response_model=ProjectRating)
+@router.post("/project/{project_id}", response_model=ProjectRating)
 def rate_project(
     project_id: int,
     rating_in: RatingCreate,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    """
-    Rate a project. A user can only rate a project once.
-    """
     if not (1 <= rating_in.rating <= 5):
         raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
 
@@ -46,59 +49,75 @@ def rate_project(
     if project.status != ProjectStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Only completed projects can be rated.")
 
-    # Verify the user is a backer of this project
-    pledge = session.exec(
-        select(Pledge).where(
-            Pledge.project_id == project_id,
-            Pledge.user_id == current_user.id,
-            Pledge.status == PledgeStatus.CAPTURED
-        )
-    ).first()
+    pledge = session.exec(select(Pledge).where(Pledge.project_id == project_id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first()
     if not pledge:
         raise HTTPException(status_code=403, detail="You must be a backer to rate this project.")
 
-    # Verify the user has not already rated this project
-    existing_rating = session.exec(
-        select(ProjectRating).where(
-            ProjectRating.project_id == project_id,
-            ProjectRating.user_id == current_user.id
-        )
-    ).first()
+    existing_rating = session.exec(select(ProjectRating).where(ProjectRating.project_id == project_id, ProjectRating.user_id == current_user.id)).first()
     if existing_rating:
         raise HTTPException(status_code=400, detail="You have already rated this project.")
 
-    # Create the new rating
-    rating = ProjectRating(
-        project_id=project_id,
-        user_id=current_user.id,
-        rating=rating_in.rating,
-        comment=rating_in.comment
+    rating = ProjectRating(**rating_in.dict(), project_id=project_id, user_id=current_user.id)
+    session.add(rating)
+    
+    # Notify the teacher
+    notification = Notification(
+        user_id=project.teacher_id,
+        content=f"You received a new {rating.rating}-star review for your project '{project.title}'.",
+        link=f"/projects/{project.id}"
     )
+    session.add(notification)
+    
+    session.commit()
+    session.refresh(rating)
+    return rating
+
+@router.post("/{rating_id}/respond", response_model=ProjectRating)
+def respond_to_rating(
+    rating_id: int,
+    response_in: RatingResponse,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    rating = session.exec(
+        select(ProjectRating)
+        .options(selectinload(ProjectRating.project))
+        .where(ProjectRating.id == rating_id)
+    ).first()
+
+    if not rating:
+        raise HTTPException(status_code=404, detail="Rating not found")
+    
+    if rating.project.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You are not authorized to respond to this rating.")
+        
+    if rating.teacher_response:
+        raise HTTPException(status_code=400, detail="You have already responded to this rating.")
+
+    rating.teacher_response = response_in.response
+    rating.response_created_at = datetime.utcnow()
     session.add(rating)
     session.commit()
     session.refresh(rating)
     return rating
 
-@router.get("/{project_id}/ratings", response_model=List[RatingRead])
+@router.get("/project/{project_id}", response_model=List[RatingRead])
 def list_project_ratings(
     project_id: int,
     session: Session = Depends(get_session)
 ):
-    """
-    List all ratings for a specific project.
-    """
-    statement = select(ProjectRating).where(ProjectRating.project_id == project_id).order_by(ProjectRating.created_at.desc())
+    statement = select(ProjectRating).where(ProjectRating.project_id == project_id).options(selectinload(ProjectRating.user)).order_by(ProjectRating.created_at.desc())
     ratings = session.exec(statement).all()
     
-    results = []
-    for r in ratings:
-        user_name = r.user.full_name if r.user else "Unknown"
-        results.append(RatingRead(
+    return [
+        RatingRead(
             id=r.id,
             rating=r.rating,
             comment=r.comment,
             created_at=r.created_at,
             user_id=r.user_id,
-            user_name=user_name
-        ))
-    return results
+            user_name=r.user.full_name if r.user else "Anonymous",
+            teacher_response=r.teacher_response,
+            response_created_at=r.response_created_at
+        ) for r in ratings
+    ]

@@ -32,7 +32,7 @@ const RateProject = ({ projectId, onRatingSuccess, initialRating, initialComment
     setIsSubmitting(true);
 
     try {
-      await client.post(`/projects/${projectId}/rate`, {
+      await client.post(`/ratings/project/${projectId}`, {
         rating,
         comment,
       });
