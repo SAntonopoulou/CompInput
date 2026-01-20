@@ -11,6 +11,7 @@ from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, Pl
 from ..security import STRIPE_SECRET_KEY
 
 stripe.api_key = STRIPE_SECRET_KEY
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -180,8 +181,8 @@ def create_stripe_onboarding_link(
         
         account_link = stripe.AccountLink.create(
             account=current_user.stripe_account_id,
-            refresh_url="http://localhost:5173/settings?stripe_reauth=true",
-            return_url="http://localhost:5173/teacher/dashboard?stripe_return=true",
+            refresh_url=f"{FRONTEND_URL}/settings?stripe_reauth=true",
+            return_url=f"{FRONTEND_URL}/teacher/dashboard?stripe_return=true",
             type="account_onboarding",
         )
         
