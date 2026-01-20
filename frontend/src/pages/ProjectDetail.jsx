@@ -17,6 +17,8 @@ const ProjectDetail = () => {
   const [error, setError] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [newUpdate, setNewUpdate] = useState('');
+  const [editingUpdateId, setEditingUpdateId] = useState(null);
+  const [editingContent, setEditingContent] = useState('');
   const [expandedVideoComments, setExpandedVideoComments] = useState({});
   const [videoComments, setVideoComments] = useState({});
   const [newComment, setNewComment] = useState({});
@@ -27,11 +29,9 @@ const ProjectDetail = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch Project
         const response = await client.get(`/projects/${id}`);
         setProject(response.data);
         
-        // Fetch User
         if (token) {
             try {
                 const userRes = await client.get('/users/me');
@@ -41,17 +41,14 @@ const ProjectDetail = () => {
             }
         }
 
-        // Fetch Updates
         const updatesRes = await client.get(`/projects/${id}/updates`);
         setUpdates(updatesRes.data);
         
-        // Fetch Videos if applicable
         if (response.data.status === 'in_progress' || response.data.status === 'completed') {
             const videosRes = await client.get('/videos/', { params: { project_id: id } });
             setVideos(videosRes.data);
         }
 
-        // Fetch Related Projects
         const relatedRes = await client.get(`/projects/${id}/related`);
         setRelatedProjects(relatedRes.data);
 
@@ -77,6 +74,28 @@ const ProjectDetail = () => {
           console.error("Failed to post update", error);
           addToast("Failed to post update", 'error');
       }
+  };
+
+  const handleEditUpdate = (update) => {
+    setEditingUpdateId(update.id);
+    setEditingContent(update.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUpdateId(null);
+    setEditingContent('');
+  };
+
+  const handleSaveUpdate = async (updateId) => {
+    try {
+      const res = await client.patch(`/projects/updates/${updateId}`, { content: editingContent });
+      setUpdates(updates.map(u => u.id === updateId ? res.data : u));
+      handleCancelEdit();
+      addToast("Update saved!", "success");
+    } catch (error) {
+      console.error("Failed to save update", error);
+      addToast("Failed to save update.", "error");
+    }
   };
 
   const toggleComments = async (videoId) => {
@@ -195,8 +214,30 @@ const ProjectDetail = () => {
                   <div className="space-y-4">
                       {updates.map(update => (
                           <div key={update.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                              <p className="text-gray-800 whitespace-pre-line">{update.content}</p>
-                              <p className="text-xs text-gray-500 mt-2">{new Date(update.created_at).toLocaleDateString()}</p>
+                              {editingUpdateId === update.id ? (
+                                <div>
+                                  <textarea
+                                    className="w-full border border-gray-300 rounded-md p-2 text-sm"
+                                    rows={3}
+                                    value={editingContent}
+                                    onChange={(e) => setEditingContent(e.target.value)}
+                                  />
+                                  <div className="mt-2 text-right space-x-2">
+                                    <button onClick={handleCancelEdit} className="text-sm text-gray-600">Cancel</button>
+                                    <button onClick={() => handleSaveUpdate(update.id)} className="text-sm text-indigo-600 font-medium">Save</button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <p className="text-gray-800 whitespace-pre-line">{update.content}</p>
+                                  <div className="flex justify-between items-center mt-2">
+                                    <p className="text-xs text-gray-500">{new Date(update.created_at).toLocaleDateString()}</p>
+                                    {isOwner && (
+                                      <button onClick={() => handleEditUpdate(update)} className="text-xs text-indigo-600 hover:underline">Edit</button>
+                                    )}
+                                  </div>
+                                </>
+                              )}
                           </div>
                       ))}
                   </div>

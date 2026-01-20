@@ -14,6 +14,7 @@ class ProjectStatus(str, Enum):
     DRAFT = "draft"
     FUNDING = "funding"
     SUCCESSFUL = "successful"
+    PENDING_CONFIRMATION = "pending_confirmation"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
     ON_HOLD = "on_hold"

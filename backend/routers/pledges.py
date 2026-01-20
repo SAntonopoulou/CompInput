@@ -74,7 +74,7 @@ def create_pledge_checkout_session(
             payment_method_types=['card'],
             line_items=[{
                 'price_data': {
-                    'currency': 'usd',
+                    'currency': 'eur', # Changed to EUR
                     'product_data': {
                         'name': f"Pledge for '{project.title}'",
                     },
@@ -134,8 +134,114 @@ def get_user_pledges(
     results = []
     for p in pledges:
         if p.project:
-            results.append(PublicPledgeHistory(project_id=p.project_id, project_title=p.project.title, created_at=p.created_at))
+            results.append(PublicPledgeHistory(project_id=p.project.id, project_title=p.project.title, created_at=p.created_at))
     return results
+
+def handle_checkout_session_completed(session: Session, data_object: dict):
+    """
+    Handles the 'checkout.session.completed' event.
+    """
+    client_reference_id = data_object.get('client_reference_id')
+
+    if not client_reference_id:
+        logger.error("Webhook error: checkout.session.completed event is missing 'client_reference_id'.")
+        return
+
+    try:
+        pledge_id = int(client_reference_id)
+        logger.info(f"Processing pledge_id: {pledge_id} from client_reference_id.")
+        
+        pledge = session.get(Pledge, pledge_id)
+        if not pledge or pledge.status != PledgeStatus.PENDING:
+            status = pledge.status if pledge else 'Not Found'
+            logger.warning(f"Webhook for non-pending or non-existent pledge ID: {pledge_id}. Status: {status}")
+            return
+
+        logger.info(f"Found pending pledge {pledge.id}. Updating status to CAPTURED.")
+        pledge.status = PledgeStatus.CAPTURED
+        pledge.payment_intent_id = data_object.get('payment_intent')
+        
+        project = session.get(Project, pledge.project_id)
+        if project:
+            logger.info(f"Updating project {project.id}. Current funding: {project.current_funding}. Pledge amount: {pledge.amount}")
+            project.current_funding += pledge.amount
+            logger.info(f"New project funding: {project.current_funding}")
+            session.add(project)
+            
+            notification = Notification(
+                user_id=project.teacher_id,
+                content=f"You received a new pledge of €{pledge.amount/100:.2f} for your project '{project.title}'!",
+                link=f"/projects/{project.id}"
+            )
+            session.add(notification)
+
+            if project.current_funding >= project.funding_goal and project.status == ProjectStatus.FUNDING:
+                project.status = ProjectStatus.SUCCESSFUL
+                logger.info(f"Project {project.id} has been fully funded.")
+                goal_notification = Notification(
+                    user_id=project.teacher_id,
+                    content=f"Congratulations! Your project '{project.title}' has been fully funded!",
+                    link=f"/projects/{project.id}"
+                )
+                session.add(goal_notification)
+        else:
+            logger.error(f"CRITICAL: Could not find project with ID {pledge.project_id} for pledge {pledge.id}")
+        
+        session.commit()
+        logger.info(f"Successfully captured and committed pledge {pledge_id}")
+    except Exception as e:
+        logger.error(f"Error processing checkout.session.completed for pledge_id {client_reference_id}: {e}\n{traceback.format_exc()}")
+        session.rollback()
+
+def handle_account_updated(session: Session, data_object: dict):
+    """
+    Handles the 'account.updated' event.
+    """
+    try:
+        stripe_account_id = data_object['id']
+        
+        teacher = session.exec(select(User).where(User.stripe_account_id == stripe_account_id)).first()
+        if teacher:
+            teacher.charges_enabled = data_object['charges_enabled']
+            teacher.payouts_enabled = data_object['payouts_enabled']
+            
+            if not teacher.charges_enabled:
+                projects_to_hold = session.exec(select(Project).where(Project.teacher_id == teacher.id, Project.status == ProjectStatus.FUNDING)).all()
+                for proj in projects_to_hold:
+                    proj.status = ProjectStatus.ON_HOLD
+            
+            notification = Notification(
+                user_id=teacher.id,
+                content="Your Stripe account status has been updated. Please check your Stripe Dashboard for details.",
+                link="/teacher/dashboard"
+            )
+            session.add(notification)
+            session.commit()
+            logger.info(f"Updated Stripe account status for teacher {teacher.id}")
+    except Exception as e:
+        logger.error(f"Error processing account.updated: {e}\n{traceback.format_exc()}")
+        session.rollback()
+
+def handle_charge_refunded(session: Session, data_object: dict):
+    """
+    Handles the 'charge.refunded' event.
+    """
+    try:
+        payment_intent_id = data_object['payment_intent']
+        
+        pledge_to_refund = session.exec(select(Pledge).where(Pledge.payment_intent_id == payment_intent_id)).first()
+        if pledge_to_refund and pledge_to_refund.status != PledgeStatus.REFUNDED:
+            pledge_to_refund.status = PledgeStatus.REFUNDED
+            
+            project = session.get(Project, pledge_to_refund.project_id)
+            if project:
+                project.current_funding -= pledge_to_refund.amount
+            
+            session.commit()
+            logger.info(f"Processed refund for pledge {pledge_to_refund.id}")
+    except Exception as e:
+        logger.error(f"Error processing charge.refunded: {e}\n{traceback.format_exc()}")
+        session.rollback()
 
 @router.post("/webhook", include_in_schema=False)
 async def stripe_webhook(
@@ -161,104 +267,13 @@ async def stripe_webhook(
     logger.info(f"Received event: {event_type}")
 
     if event_type == 'checkout.session.completed':
-        session_obj = data
-        client_reference_id = session_obj.get('client_reference_id')
-
-        if not client_reference_id:
-            logger.error("Webhook error: checkout.session.completed event is missing 'client_reference_id'.")
-            return {"status": "error", "detail": "Missing client_reference_id"}
-
-        try:
-            pledge_id = int(client_reference_id)
-            logger.info(f"Processing pledge_id: {pledge_id} from client_reference_id.")
-            
-            pledge = session.get(Pledge, pledge_id)
-            if not pledge or pledge.status != PledgeStatus.PENDING:
-                status = pledge.status if pledge else 'Not Found'
-                logger.warning(f"Webhook for non-pending or non-existent pledge ID: {pledge_id}. Status: {status}")
-                return {"status": "success", "detail": "Pledge not found or already processed"}
-
-            logger.info(f"Found pending pledge {pledge.id}. Updating status to CAPTURED.")
-            pledge.status = PledgeStatus.CAPTURED
-            pledge.payment_intent_id = session_obj.get('payment_intent')
-            
-            project = session.get(Project, pledge.project_id)
-            if project:
-                logger.info(f"Updating project {project.id}. Current funding: {project.current_funding}. Pledge amount: {pledge.amount}")
-                project.current_funding += pledge.amount
-                logger.info(f"New project funding: {project.current_funding}")
-                session.add(project) # Explicitly add to session to track changes
-                
-                notification = Notification(
-                    user_id=project.teacher_id,
-                    content=f"You received a new pledge of ${pledge.amount/100:.2f} for your project '{project.title}'!",
-                    link=f"/projects/{project.id}"
-                )
-                session.add(notification)
-
-                if project.current_funding >= project.funding_goal and project.status == ProjectStatus.FUNDING:
-                    project.status = ProjectStatus.SUCCESSFUL
-                    logger.info(f"Project {project.id} has been fully funded.")
-                    goal_notification = Notification(
-                        user_id=project.teacher_id,
-                        content=f"Congratulations! Your project '{project.title}' has been fully funded!",
-                        link=f"/projects/{project.id}"
-                    )
-                    session.add(goal_notification)
-            else:
-                logger.error(f"CRITICAL: Could not find project with ID {pledge.project_id} for pledge {pledge.id}")
-            
-            session.commit()
-            logger.info(f"Successfully captured and committed pledge {pledge_id}")
-        except Exception as e:
-            logger.error(f"Error processing checkout.session.completed for pledge_id {client_reference_id}: {e}\n{traceback.format_exc()}")
-            session.rollback()
+        handle_checkout_session_completed(session, data)
 
     elif event_type == 'account.updated':
-        try:
-            account = data
-            stripe_account_id = account['id']
-            
-            teacher = session.exec(select(User).where(User.stripe_account_id == stripe_account_id)).first()
-            if teacher:
-                teacher.charges_enabled = account['charges_enabled']
-                teacher.payouts_enabled = account['payouts_enabled']
-                
-                if not teacher.charges_enabled:
-                    projects_to_hold = session.exec(select(Project).where(Project.teacher_id == teacher.id, Project.status == ProjectStatus.FUNDING)).all()
-                    for proj in projects_to_hold:
-                        proj.status = ProjectStatus.ON_HOLD
-                
-                notification = Notification(
-                    user_id=teacher.id,
-                    content="Your Stripe account status has been updated. Please check your Stripe Dashboard for details.",
-                    link="/teacher/dashboard"
-                )
-                session.add(notification)
-                session.commit()
-                logger.info(f"Updated Stripe account status for teacher {teacher.id}")
-        except Exception as e:
-            logger.error(f"Error processing account.updated: {e}\n{traceback.format_exc()}")
-            session.rollback()
+        handle_account_updated(session, data)
 
     elif event_type == 'charge.refunded':
-        try:
-            charge = data
-            payment_intent_id = charge['payment_intent']
-            
-            pledge_to_refund = session.exec(select(Pledge).where(Pledge.payment_intent_id == payment_intent_id)).first()
-            if pledge_to_refund and pledge_to_refund.status != PledgeStatus.REFUNDED:
-                pledge_to_refund.status = PledgeStatus.REFUNDED
-                
-                project = session.get(Project, pledge_to_refund.project_id)
-                if project:
-                    project.current_funding -= pledge_to_refund.amount
-                
-                session.commit()
-                logger.info(f"Processed refund for pledge {pledge_to_refund.id}")
-        except Exception as e:
-            logger.error(f"Error processing charge.refunded: {e}\n{traceback.format_exc()}")
-            session.rollback()
+        handle_charge_refunded(session, data)
 
     else:
         logger.info(f"Unhandled event type: {event_type}")

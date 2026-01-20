@@ -37,11 +37,11 @@ const PledgeForm = ({ projectId, projectName }) => {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label htmlFor="pledgeAmount" className="block text-sm font-medium text-gray-700">
-          Pledge Amount (USD)
+          Pledge Amount (EUR)
         </label>
         <div className="mt-1 relative rounded-md shadow-sm">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <span className="text-gray-500 sm:text-sm">$</span>
+            <span className="text-gray-500 sm:text-sm">€</span>
           </div>
           <input
             type="number"

@@ -6,14 +6,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
+import os
 
+import logging
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate
+from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, Pledge
 from ..security import STRIPE_SECRET_KEY
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 stripe.api_key = STRIPE_SECRET_KEY
+PLATFORM_FEE_PERCENT = float(os.getenv("PLATFORM_FEE_PERCENT", "0.15"))
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -75,6 +80,38 @@ class UpdateRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+def _create_project_read(p: Project) -> ProjectRead:
+    """Helper function to convert a Project model to a ProjectRead model."""
+    teacher_name = p.teacher.full_name if p.teacher else "Unknown"
+    requester_name = p.request.user.full_name if (p.request and p.request.user) else None
+    requester_id = p.request.user.id if (p.request and p.request.user) else None
+    teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
+    requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
+    
+    return ProjectRead(
+        id=p.id,
+        title=p.title,
+        description=p.description,
+        language=p.language,
+        level=p.level,
+        funding_goal=p.funding_goal,
+        tags=p.tags,
+        current_funding=p.current_funding,
+        deadline=p.deadline,
+        delivery_days=p.delivery_days,
+        status=p.status,
+        created_at=p.created_at,
+        updated_at=p.updated_at,
+        teacher_id=p.teacher_id,
+        teacher_name=teacher_name,
+        stripe_transfer_id=p.stripe_transfer_id,
+        requester_name=requester_name,
+        requester_id=requester_id,
+        teacher_avatar_url=teacher_avatar_url,
+        requester_avatar_url=requester_avatar_url,
+        origin_request_id=p.origin_request_id
+    )
 
 @router.post("/", response_model=Project)
 def create_project(
@@ -141,40 +178,7 @@ def list_projects(
         
     projects = session.exec(query).all()
     
-    result = []
-    for p in projects:
-        teacher_name = p.teacher.full_name if p.teacher else "Unknown"
-        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
-        requester_id = p.request.user.id if (p.request and p.request.user) else None
-        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
-        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
-        
-        project_read = ProjectRead(
-            id=p.id,
-            title=p.title,
-            description=p.description,
-            language=p.language,
-            level=p.level,
-            funding_goal=p.funding_goal,
-            tags=p.tags,
-            current_funding=p.current_funding,
-            deadline=p.deadline,
-            delivery_days=p.delivery_days,
-            status=p.status,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            teacher_id=p.teacher_id,
-            teacher_name=teacher_name,
-            stripe_transfer_id=p.stripe_transfer_id,
-            requester_name=requester_name,
-            requester_id=requester_id,
-            teacher_avatar_url=teacher_avatar_url,
-            requester_avatar_url=requester_avatar_url,
-            origin_request_id=p.origin_request_id
-        )
-        result.append(project_read)
-        
-    return result
+    return [_create_project_read(p) for p in projects]
 
 @router.get("/me", response_model=List[ProjectRead])
 def list_my_projects(
@@ -196,40 +200,7 @@ def list_my_projects(
     )
     projects = session.exec(query).all()
     
-    result = []
-    for p in projects:
-        teacher_name = p.teacher.full_name if p.teacher else "Unknown"
-        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
-        requester_id = p.request.user.id if (p.request and p.request.user) else None
-        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
-        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
-        
-        project_read = ProjectRead(
-            id=p.id,
-            title=p.title,
-            description=p.description,
-            language=p.language,
-            level=p.level,
-            funding_goal=p.funding_goal,
-            tags=p.tags,
-            current_funding=p.current_funding,
-            deadline=p.deadline,
-            delivery_days=p.delivery_days,
-            status=p.status,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            teacher_id=p.teacher_id,
-            teacher_name=teacher_name,
-            stripe_transfer_id=p.stripe_transfer_id,
-            requester_name=requester_name,
-            requester_id=requester_id,
-            teacher_avatar_url=teacher_avatar_url,
-            requester_avatar_url=requester_avatar_url,
-            origin_request_id=p.origin_request_id
-        )
-        result.append(project_read)
-        
-    return result
+    return [_create_project_read(p) for p in projects]
 
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(
@@ -248,35 +219,7 @@ def get_project(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
         
-    teacher_name = project.teacher.full_name if project.teacher else "Unknown"
-    requester_name = project.request.user.full_name if (project.request and project.request.user) else None
-    requester_id = project.request.user.id if (project.request and project.request.user) else None
-    teacher_avatar_url = project.teacher.avatar_url if project.teacher else None
-    requester_avatar_url = project.request.user.avatar_url if (project.request and project.request.user) else None
-    
-    return ProjectRead(
-        id=project.id,
-        title=project.title,
-        description=project.description,
-        language=project.language,
-        level=project.level,
-        funding_goal=project.funding_goal,
-        tags=project.tags,
-        current_funding=project.current_funding,
-        deadline=project.deadline,
-        delivery_days=project.delivery_days,
-        status=project.status,
-        created_at=project.created_at,
-        updated_at=project.updated_at,
-        teacher_id=project.teacher_id,
-        teacher_name=teacher_name,
-        stripe_transfer_id=project.stripe_transfer_id,
-        requester_name=requester_name,
-        requester_id=requester_id,
-        teacher_avatar_url=teacher_avatar_url,
-        requester_avatar_url=requester_avatar_url,
-        origin_request_id=project.origin_request_id
-    )
+    return _create_project_read(project)
 
 @router.get("/{project_id}/related", response_model=List[ProjectRead])
 def get_related_projects(
@@ -319,39 +262,7 @@ def get_related_projects(
     
     scored_candidates.sort(key=lambda x: x[0], reverse=True)
     
-    results = []
-    for _, p in scored_candidates[:3]:
-        teacher_name = p.teacher.full_name if p.teacher else "Unknown"
-        requester_name = p.request.user.full_name if (p.request and p.request.user) else None
-        requester_id = p.request.user.id if (p.request and p.request.user) else None
-        teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
-        requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
-
-        results.append(ProjectRead(
-            id=p.id,
-            title=p.title,
-            description=p.description,
-            language=p.language,
-            level=p.level,
-            funding_goal=p.funding_goal,
-            tags=p.tags,
-            current_funding=p.current_funding,
-            deadline=p.deadline,
-            delivery_days=p.delivery_days,
-            status=p.status,
-            created_at=p.created_at,
-            updated_at=p.updated_at,
-            teacher_id=p.teacher_id,
-            teacher_name=teacher_name,
-            stripe_transfer_id=p.stripe_transfer_id,
-            requester_name=requester_name,
-            requester_id=requester_id,
-            teacher_avatar_url=teacher_avatar_url,
-            requester_avatar_url=requester_avatar_url,
-            origin_request_id=p.origin_request_id
-        ))
-        
-    return results
+    return [_create_project_read(p) for _, p in scored_candidates[:3]]
 
 @router.patch("/{project_id}", response_model=Project)
 def update_project(
@@ -399,7 +310,7 @@ def complete_project(
     session: Session = Depends(get_session)
 ):
     """
-    Mark a project as completed and trigger payout.
+    Mark a project as ready for student confirmation.
     """
     project = session.get(Project, project_id)
     if not project:
@@ -414,41 +325,84 @@ def complete_project(
     if project.status != ProjectStatus.SUCCESSFUL:
         raise HTTPException(
             status_code=400,
-            detail="Project must be SUCCESSFUL to be completed",
+            detail="Project must be SUCCESSFUL to be marked for completion",
         )
 
+    project.status = ProjectStatus.PENDING_CONFIRMATION
+    session.add(project)
+
+    # Notify all backers
+    backers = session.exec(select(User).join(Pledge).where(Pledge.project_id == project_id, Pledge.status == PledgeStatus.CAPTURED)).all()
+    for backer in backers:
+        notification = Notification(
+            user_id=backer.id,
+            content=f"Project '{project.title}' is ready for your review. Please confirm its completion.",
+            link=f"/projects/{project.id}"
+        )
+        session.add(notification)
+
+    session.commit()
+    session.refresh(project)
+    
+    return project
+
+@router.post("/{project_id}/confirm-completion", response_model=Project)
+def confirm_completion(
+    project_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Allows a student backer to confirm project completion, triggering teacher payout.
+    """
+    project = session.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project.status != ProjectStatus.PENDING_CONFIRMATION:
+        raise HTTPException(status_code=400, detail="Project is not awaiting confirmation.")
+
+    # Verify the current user has a captured pledge for this project
+    pledge = session.exec(select(Pledge).where(Pledge.project_id == project_id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first()
+    if not pledge:
+        raise HTTPException(status_code=403, detail="You are not a backer of this project.")
+
     if project.stripe_transfer_id:
-        raise HTTPException(
-            status_code=400,
-            detail="This project has already been paid out.",
-        )
-    
-    teacher = project.teacher
-    if not teacher.stripe_account_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Teacher has not connected a Stripe account for payouts",
-        )
-        
-    platform_fee_percent = 0.15
+        raise HTTPException(status_code=400, detail="This project has already been paid out.")
+
+    teacher = session.get(User, project.teacher_id)
+    if not teacher or not teacher.stripe_account_id:
+        raise HTTPException(status_code=400, detail="Teacher has not connected a Stripe account for payouts.")
+
     amount_collected = project.current_funding
-    platform_fee = int(amount_collected * platform_fee_percent)
+    platform_fee = int(amount_collected * PLATFORM_FEE_PERCENT)
     payout_amount = amount_collected - platform_fee
-    
+
     if payout_amount > 0:
         try:
+            logger.info(f"Initiating payout for project {project.id} to teacher {teacher.id} (Stripe Acc: {teacher.stripe_account_id}). Amount: {payout_amount} cents.")
             transfer = stripe.Transfer.create(
                 amount=payout_amount,
-                currency="usd",
+                currency="eur",
                 destination=teacher.stripe_account_id,
                 metadata={"project_id": str(project.id)},
             )
             project.stripe_transfer_id = transfer.id
+            logger.info(f"Successfully created Stripe Transfer {transfer.id} for project {project.id}.")
         except stripe.error.StripeError as e:
             raise HTTPException(status_code=400, detail=f"Payout failed: {str(e)}")
-    
+
     project.status = ProjectStatus.COMPLETED
     session.add(project)
+
+    # Notify teacher of payout
+    notification = Notification(
+        user_id=project.teacher_id,
+        content=f"Your funds for project '{project.title}' have been released and will be available in your bank account within 14 business days.",
+        link=f"/teacher/dashboard"
+    )
+    session.add(notification)
+
     session.commit()
     session.refresh(project)
     
@@ -562,6 +516,29 @@ def add_project_update(
         created_at=update.created_at,
         project_id=update.project_id
     )
+
+@router.patch("/updates/{update_id}", response_model=UpdateRead)
+def edit_project_update(
+    update_id: int,
+    update_in: UpdateCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Edit a project update.
+    """
+    db_update = session.get(ProjectUpdate, update_id, options=[selectinload(ProjectUpdate.project)])
+    if not db_update:
+        raise HTTPException(status_code=404, detail="Update not found")
+
+    if db_update.project.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this update")
+
+    db_update.content = update_in.content
+    session.add(db_update)
+    session.commit()
+    session.refresh(db_update)
+    return db_update
 
 @router.get("/{project_id}/updates", response_model=List[UpdateRead])
 def list_project_updates(

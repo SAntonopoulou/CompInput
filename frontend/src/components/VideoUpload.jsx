@@ -1,91 +1,68 @@
 import React, { useState } from 'react';
 import client from '../api/client';
+import { useToast } from '../context/ToastContext';
 
-const VideoUpload = ({ projectId, onClose, onSuccess }) => {
+const LinkVideoModal = ({ projectId, onClose, onSuccess }) => {
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
-  const [duration, setDuration] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { addToast } = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
-    setError('');
-
     try {
       await client.post('/videos/', {
         project_id: projectId,
         title,
         url,
-        duration: duration ? parseInt(duration) : null
       });
+      addToast('Video linked successfully!', 'success');
       onSuccess();
-    } catch (err) {
-      console.error("Upload failed", err);
-      setError(err.response?.data?.detail || "Failed to upload video");
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error("Failed to link video", error);
+      addToast(error.response?.data?.detail || 'Failed to link video.', 'error');
     }
   };
 
   return (
-    <div className="fixed z-10 inset-0 overflow-y-auto">
-      <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-        <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-          <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
-        </div>
-        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-          <form onSubmit={handleSubmit}>
-            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Upload Video</h3>
-              {error && <div className="mb-4 text-red-600 text-sm">{error}</div>}
-              
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Video Title</label>
-                  <input
-                    type="text"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Video URL (YouTube/Vimeo)</label>
-                  <input
-                    type="url"
-                    required
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Duration (seconds)</label>
-                  <input
-                    type="number"
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    value={duration}
-                    onChange={(e) => setDuration(e.target.value)}
-                  />
-                </div>
-              </div>
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+        <div className="mt-3 text-center">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Link a Video</h3>
+          <form onSubmit={handleSubmit} className="mt-2 text-left space-y-4">
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium text-gray-700">Video Title</label>
+              <input
+                type="text"
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+              />
             </div>
-            <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+            <div>
+              <label htmlFor="url" className="block text-sm font-medium text-gray-700">Video URL</label>
+              <input
+                type="url"
+                id="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                required
+                className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+            </div>
+            <div className="items-center px-4 py-3">
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50"
+                className="px-4 py-2 bg-indigo-600 text-white text-base font-medium rounded-md w-full shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                {loading ? 'Uploading...' : 'Submit'}
+                Link Video
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
+                className="mt-2 px-4 py-2 bg-gray-200 text-gray-800 text-base font-medium rounded-md w-full shadow-sm hover:bg-gray-300 focus:outline-none"
               >
                 Cancel
               </button>
@@ -97,4 +74,4 @@ const VideoUpload = ({ projectId, onClose, onSuccess }) => {
   );
 };
 
-export default VideoUpload;
+export default LinkVideoModal;

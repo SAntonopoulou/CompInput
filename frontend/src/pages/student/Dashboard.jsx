@@ -27,11 +27,8 @@ const StudentDashboard = () => {
     if (params.get('payment') === 'success') {
       addToast("Thank you for your pledge! It is being processed and will appear below shortly.", "info");
       
-      // Remove the query param from the URL
       navigate(location.pathname, { replace: true });
 
-      // Initial fetch, then delayed refetch
-      fetchPledges();
       const timer = setTimeout(() => {
         fetchPledges();
       }, 3000);
@@ -41,6 +38,17 @@ const StudentDashboard = () => {
       fetchPledges();
     }
   }, [location, navigate, addToast, fetchPledges]);
+
+  const handleConfirmCompletion = async (projectId) => {
+    try {
+      await client.post(`/projects/${projectId}/confirm-completion`);
+      addToast("Project completion confirmed! The teacher will now be paid.", "success");
+      fetchPledges();
+    } catch (error) {
+      console.error("Failed to confirm completion", error);
+      addToast(error.response?.data?.detail || "Failed to confirm completion.", "error");
+    }
+  };
 
   const formatCurrency = (amountInCents) => {
     return new Intl.NumberFormat('en-US', {
@@ -83,6 +91,9 @@ const StudentDashboard = () => {
                 <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Status
                 </th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -110,6 +121,16 @@ const StudentDashboard = () => {
                             Project: {pledge.project_status}
                         </span>
                     </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    {pledge.project_status === 'pending_confirmation' && (
+                      <button
+                        onClick={() => handleConfirmCompletion(pledge.project_id)}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        Confirm Completion
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

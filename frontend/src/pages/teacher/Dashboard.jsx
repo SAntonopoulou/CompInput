@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import client from '../../api/client';
-import VideoUpload from '../../components/VideoUpload';
+import LinkVideoModal from '../../components/VideoUpload';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import { useToast } from '../../context/ToastContext';
 
@@ -61,14 +61,14 @@ const Dashboard = () => {
     }
   };
 
-  const handleUploadVideo = (projectId) => {
+  const handleLinkVideo = (projectId) => {
     setSelectedProjectId(projectId);
     setShowVideoModal(true);
   };
 
-  const handleVideoUploadSuccess = () => {
+  const handleVideoLinkSuccess = () => {
     setShowVideoModal(false);
-    addToast("Video uploaded successfully!", 'success');
+    addToast("Video linked successfully!", 'success');
     // Refresh projects
     client.get('/projects/me').then(res => {
         const activeProjects = res.data.filter(p => p.status !== 'cancelled');
@@ -76,18 +76,18 @@ const Dashboard = () => {
     });
   };
 
-  const confirmCompleteProject = (projectId) => {
+  const confirmRequestCompletion = (projectId) => {
     setModalConfig({
-      title: "Complete Project",
-      message: "Are you sure? This will release funds to your account.",
-      confirmText: "Complete & Payout",
+      title: "Request Completion",
+      message: "Are you sure? This will notify all backers to confirm the project is complete.",
+      confirmText: "Request Confirmation",
       isDanger: false,
-      onConfirm: () => handleCompleteProject(projectId)
+      onConfirm: () => handleRequestCompletion(projectId)
     });
     setModalOpen(true);
   };
 
-  const handleCompleteProject = async (projectId) => {
+  const handleRequestCompletion = async (projectId) => {
     setModalOpen(false);
     try {
       await client.post(`/projects/${projectId}/complete`);
@@ -95,10 +95,10 @@ const Dashboard = () => {
       const res = await client.get('/projects/me');
       const activeProjects = res.data.filter(p => p.status !== 'cancelled');
       setProjects(activeProjects);
-      addToast("Project completed and funds released!", 'success');
+      addToast("Confirmation requested from students. You will be notified when the project is confirmed and funds are released.", 'success');
     } catch (error) {
-      console.error("Failed to complete project", error);
-      addToast(error.response?.data?.detail || "Failed to complete project.", 'error');
+      console.error("Failed to request completion", error);
+      addToast(error.response?.data?.detail || "Failed to request completion.", 'error');
     }
   };
 
@@ -192,21 +192,21 @@ const Dashboard = () => {
                         </Link>
                       )}
                       
-                      {(project.status === 'funded' || project.status === 'in_progress') && (
+                      {project.status === 'successful' && (
                         <button
-                          onClick={() => handleUploadVideo(project.id)}
+                          onClick={() => handleLinkVideo(project.id)}
                           className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200"
                         >
-                          Upload Video
+                          Link Video
                         </button>
                       )}
 
-                      {project.status === 'in_progress' && (
+                      {project.status === 'successful' && (
                         <button
-                          onClick={() => confirmCompleteProject(project.id)}
+                          onClick={() => confirmRequestCompletion(project.id)}
                           className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200"
                         >
-                          Mark Complete
+                          Request Completion
                         </button>
                       )}
 
@@ -239,10 +239,10 @@ const Dashboard = () => {
 
       {/* Video Upload Modal */}
       {showVideoModal && (
-        <VideoUpload 
+        <LinkVideoModal
             projectId={selectedProjectId} 
             onClose={() => setShowVideoModal(false)}
-            onSuccess={handleVideoUploadSuccess}
+            onSuccess={handleVideoLinkSuccess}
         />
       )}
 

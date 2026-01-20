@@ -70,8 +70,6 @@ def create_video(
     """
     Submit a video for a funded project.
     """
-    # Load project without pledges (optimization)
-    # We only need basic project info here to verify ownership and status
     project = session.exec(
         select(Project)
         .where(Project.id == video_in.project_id)
@@ -80,21 +78,18 @@ def create_video(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Verify user is the teacher
     if project.teacher_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only the project owner can submit videos",
         )
     
-    # Verify project status
-    if project.status not in [ProjectStatus.FUNDED, ProjectStatus.IN_PROGRESS]:
+    if project.status != ProjectStatus.SUCCESSFUL:
         raise HTTPException(
             status_code=400,
-            detail="Project must be FUNDED or IN_PROGRESS to submit videos",
+            detail="Project must be SUCCESSFUL to submit videos",
         )
     
-    # Create Video
     video = Video(
         title=video_in.title,
         url=video_in.url,
@@ -104,13 +99,6 @@ def create_video(
     )
     session.add(video)
     
-    # Update Project Status if needed
-    if project.status == ProjectStatus.FUNDED:
-        project.status = ProjectStatus.IN_PROGRESS
-        session.add(project)
-    
-    # NOTIFICATION: Notify Backers
-    # Optimization: Fetch only CAPTURED pledges directly from DB instead of loading all pledges
     statement = select(Pledge).where(
         Pledge.project_id == project.id,
         Pledge.status == PledgeStatus.CAPTURED
@@ -146,7 +134,6 @@ def list_videos(
     """
     Public archive of videos.
     """
-    # Join Video -> Project to filter and check privacy
     query = select(Video).join(Project).where(Project.is_private == False)
     
     if language:
@@ -158,7 +145,6 @@ def list_videos(
     if project_id:
         query = query.where(Video.project_id == project_id)
         
-    # Eager load project and teacher to avoid N+1
     query = query.options(selectinload(Video.project).selectinload(Project.teacher))
     
     query = query.offset(offset).limit(limit)
@@ -167,7 +153,6 @@ def list_videos(
     
     results = []
     for v in videos:
-        # Handle potential missing relationships gracefully, though they should exist
         project_title = v.project.title if v.project else "Unknown"
         teacher_name = v.project.teacher.full_name if (v.project and v.project.teacher) else "Unknown"
         
@@ -256,7 +241,6 @@ def rate_video(
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
     
-    # Check if user has already rated this video
     statement = select(VideoRating).where(
         VideoRating.video_id == video_id,
         VideoRating.user_id == current_user.id
@@ -264,7 +248,6 @@ def rate_video(
     existing_rating = session.exec(statement).first()
     
     if existing_rating:
-        # Update existing rating
         existing_rating.rating = rating_in.rating
         existing_rating.comment = rating_in.comment
         existing_rating.created_at = datetime.utcnow()
@@ -273,7 +256,6 @@ def rate_video(
         session.refresh(existing_rating)
         return existing_rating
     
-    # Create new rating
     rating = VideoRating(
         video_id=video_id,
         user_id=current_user.id,

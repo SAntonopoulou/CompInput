@@ -45,7 +45,7 @@ class ProjectResponse(BaseModel):
     description: str
     language: str
     level: str
-    goal_amount: int
+    funding_goal: int
     status: ProjectStatus
     teacher_id: int
     origin_request_id: Optional[int] = None
@@ -172,12 +172,12 @@ def convert_request_to_project(
     session: Session = Depends(get_session)
 ):
     """
-    Convert a request into a draft project (Accept Budget). Only teachers can do this.
+    Convert a request into a fundable project (Accept Budget). Only teachers can do this.
     """
     if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can convert requests to projects",
+            detail="Only teachers or admins can convert requests to projects",
         )
         
     request = session.get(Request, request_id)
@@ -190,8 +190,8 @@ def convert_request_to_project(
         description=request.description,
         language=request.language,
         level=request.level,
-        goal_amount=request.budget, # Use the student's budget
-        status=ProjectStatus.DRAFT,
+        funding_goal=request.budget, # Use the student's budget
+        status=ProjectStatus.FUNDING,
         teacher_id=current_user.id,
         origin_request_id=request.id,
         is_private=request.is_private
@@ -282,8 +282,8 @@ def accept_offer(
         description=request.description,
         language=request.language,
         level=request.level,
-        goal_amount=request.counter_offer_amount,
-        status=ProjectStatus.ACTIVE, # Ready for funding immediately
+        funding_goal=request.counter_offer_amount,
+        status=ProjectStatus.FUNDING, # Ready for funding immediately
         teacher_id=request.target_teacher_id,
         origin_request_id=request.id,
         is_private=request.is_private
