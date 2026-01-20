@@ -158,11 +158,32 @@ When registering a new user via the frontend:
 
 ## 🚀 Project Status & To Do
 
-The application is currently **Feature Complete (MVP)**. All core logic for the marketplace, learning management, and administration is implemented.
+The application is currently **Feature Complete (MVP)**. All core logic for project creation, funding, requests, payouts, and administration is implemented.
 
-### Infrastructure To-Do List
-- [ ] **Email Notifications:** Integrate SendGrid, Mailgun, or AWS SES to notify users of funding events and messages when they are offline.
-- [ ] **File Hosting:** Integrate AWS S3 or Cloudinary to allow direct file uploads for avatars and videos instead of URL pasting.
-- [ ] **Password Reset:** Implement secure token generation and email links for account recovery.
-- [ ] **Deployment:** Create `Dockerfile` and `docker-compose.yml` for containerized deployment and set up a production PostgreSQL database.
-- [ ] **Legal Compliance:** Add Terms of Service and Privacy Policy pages (required for Stripe).
+### Future Enhancements & To-Do List
+
+#### New Features
+- [ ] **Enhanced Rating System:**
+  - Implement authorization to ensure only students who have funded a project can rate its videos.
+  - Aggregate video ratings to create an overall public rating for each teacher.
+- [ ] **Teacher Verification:**
+  - Create a system for teachers to upload certification documents.
+  - Build an admin interface to review and approve/reject certifications.
+  - Display a "Verified" badge on the profiles of approved teachers to help them stand out.
+- [ ] **Notification Management:**
+  - Add functionality for users to manually delete individual or all notifications, not just mark them as read.
+
+#### Infrastructure & Polish
+- [ ] **Email Integration:** Integrate an email service (e.g., SendGrid, Mailgun) for:
+  - User email verification upon registration.
+  - Secure password reset functionality.
+  - Offline notifications for important events (e.g., project funded, payout processed).
+- [ ] **Direct File Uploads:** Integrate a cloud storage service (e.g., AWS S3, Cloudinary) for:
+  - User avatars.
+  - Teacher intro/sample videos.
+  - Secure hosting for delivered project videos, replacing the current URL-pasting system.
+- [ ] **Deployment & Scalability:**
+  - Create `Dockerfile` and `docker-compose.yml` for containerized deployment.
+  - Set up a production-ready PostgreSQL database.
+- [ ] **Legal & Compliance:**
+  - Add "Terms of Service" and "Privacy Policy" pages, which are required for a live Stripe account.
