@@ -14,11 +14,8 @@ stripe.api_key = STRIPE_SECRET_KEY
 
 router = APIRouter(prefix="/users", tags=["users"])
 
-class OnboardingRequest(BaseModel):
-    country: str = "US" # Default to US, but allows JP, FR, ES, etc.
-
 class OnboardingResponse(BaseModel):
-    url: str
+    onboarding_url: str
 
 class TeacherRead(BaseModel):
     id: int
@@ -79,7 +76,6 @@ def delete_me(
     Safely delete the current user account.
     Reassigns related data to a system 'Deleted User' account.
     """
-    # 1. Find or Create "Deleted User"
     statement = select(User).where(User.email == "deleted@system")
     deleted_user = session.exec(statement).first()
     
@@ -95,28 +91,24 @@ def delete_me(
         session.commit()
         session.refresh(deleted_user)
     
-    # 2. Reassign Projects (Teacher)
     statement = select(Project).where(Project.teacher_id == current_user.id)
     projects = session.exec(statement).all()
     for project in projects:
         project.teacher_id = deleted_user.id
         session.add(project)
         
-    # 3. Reassign Pledges (Student)
     statement = select(Pledge).where(Pledge.user_id == current_user.id)
     pledges = session.exec(statement).all()
     for pledge in pledges:
         pledge.user_id = deleted_user.id
         session.add(pledge)
         
-    # 4. Reassign Requests (Student)
     statement = select(Request).where(Request.user_id == current_user.id)
     requests = session.exec(statement).all()
     for request in requests:
         request.user_id = deleted_user.id
         session.add(request)
 
-    # 5. Delete User
     session.delete(current_user)
     session.commit()
     return
@@ -135,12 +127,6 @@ def get_user_profile(
     
     average_rating = None
     if user.role == UserRole.TEACHER:
-        # Calculate average rating for teacher
-        # Join Video -> VideoRating
-        # Filter by Video.project.teacher_id == user.id
-        # But Video doesn't have teacher_id directly, it's via Project
-        # So: VideoRating -> Video -> Project -> Teacher
-        
         statement = select(func.avg(VideoRating.rating)).join(Video).join(Project).where(Project.teacher_id == user.id)
         result = session.exec(statement).first()
         if result:
@@ -170,49 +156,36 @@ def search_teachers(
     teachers = session.exec(statement).all()
     return [TeacherRead(id=t.id, full_name=t.full_name) for t in teachers]
 
-@router.post("/onboard", response_model=OnboardingResponse)
-def onboard_teacher(
-    onboarding_in: OnboardingRequest = OnboardingRequest(),
+@router.post("/stripe-onboarding-link", response_model=OnboardingResponse)
+def create_stripe_onboarding_link(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Create a Stripe Connect account for the teacher and return the onboarding link.
+    Create a Stripe Connect onboarding link for a teacher.
     """
-    if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
+    if current_user.role != UserRole.TEACHER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can onboard with Stripe",
+            detail="Only teachers can create Stripe onboarding links.",
         )
     
     try:
-        # 1. Create Stripe Account if not exists
         if not current_user.stripe_account_id:
-            account = stripe.Account.create(
-                type="express",
-                country=onboarding_in.country,
-                email=current_user.email,
-                capabilities={
-                    "card_payments": {"requested": True},
-                    "transfers": {"requested": True},
-                },
-            )
+            account = stripe.Account.create(type='express', email=current_user.email)
             current_user.stripe_account_id = account.id
             session.add(current_user)
             session.commit()
             session.refresh(current_user)
         
-        # 2. Create Account Link
-        # Use environment variable for production, fallback to localhost for dev
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
         account_link = stripe.AccountLink.create(
             account=current_user.stripe_account_id,
-            refresh_url=f"{frontend_url}/teacher/dashboard",
-            return_url=f"{frontend_url}/teacher/dashboard",
+            refresh_url="http://localhost:5173/settings?stripe_reauth=true",
+            return_url="http://localhost:5173/teacher/dashboard?stripe_return=true",
             type="account_onboarding",
         )
         
-        return {"url": account_link.url}
+        return {"onboarding_url": account_link.url}
 
     except stripe.error.StripeError as e:
         raise HTTPException(status_code=400, detail=str(e))

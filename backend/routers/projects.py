@@ -23,8 +23,8 @@ class ProjectCreate(BaseModel):
     description: str
     language: str
     level: str
-    goal_amount: int
-    delivery_days: int # Replaces deadline
+    funding_goal: int
+    delivery_days: int
     tags: Optional[str] = None
 
 class ProjectUpdateModel(BaseModel):
@@ -32,7 +32,7 @@ class ProjectUpdateModel(BaseModel):
     description: Optional[str] = None
     language: Optional[str] = None
     level: Optional[str] = None
-    goal_amount: Optional[int] = None
+    funding_goal: Optional[int] = None
     deadline: Optional[datetime] = None
     delivery_days: Optional[int] = None
     status: Optional[ProjectStatus] = None
@@ -44,8 +44,8 @@ class ProjectRead(BaseModel):
     description: str
     language: str
     level: str
-    goal_amount: int
-    current_amount: int
+    funding_goal: int
+    current_funding: int
     tags: Optional[str] = None
     deadline: Optional[datetime]
     delivery_days: Optional[int]
@@ -94,7 +94,7 @@ def create_project(
     project = Project(
         **project_in.dict(),
         teacher_id=current_user.id,
-        status=ProjectStatus.ACTIVE # Immediately active
+        status=ProjectStatus.FUNDING
     )
     session.add(project)
     session.commit()
@@ -116,8 +116,8 @@ def list_projects(
     List public projects.
     """
     query = select(Project).where(
-        (Project.status == ProjectStatus.ACTIVE) | 
-        (Project.status == ProjectStatus.FUNDED)
+        (Project.status == ProjectStatus.FUNDING) | 
+        (Project.status == ProjectStatus.SUCCESSFUL)
     ).where(
         (Project.is_private == False)
     ).options(
@@ -141,11 +141,8 @@ def list_projects(
         
     projects = session.exec(query).all()
     
-    # Transform to ProjectRead to include teacher name
-    # Note: In a larger app, we might want to use a join in the query
     result = []
     for p in projects:
-        # Ensure teacher is loaded (lazy loading might happen here)
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
         requester_name = p.request.user.full_name if (p.request and p.request.user) else None
         requester_id = p.request.user.id if (p.request and p.request.user) else None
@@ -158,9 +155,9 @@ def list_projects(
             description=p.description,
             language=p.language,
             level=p.level,
-            goal_amount=p.goal_amount,
+            funding_goal=p.funding_goal,
             tags=p.tags,
-            current_amount=p.current_amount,
+            current_funding=p.current_funding,
             deadline=p.deadline,
             delivery_days=p.delivery_days,
             status=p.status,
@@ -213,9 +210,9 @@ def list_my_projects(
             description=p.description,
             language=p.language,
             level=p.level,
-            goal_amount=p.goal_amount,
+            funding_goal=p.funding_goal,
             tags=p.tags,
-            current_amount=p.current_amount,
+            current_funding=p.current_funding,
             deadline=p.deadline,
             delivery_days=p.delivery_days,
             status=p.status,
@@ -263,9 +260,9 @@ def get_project(
         description=project.description,
         language=project.language,
         level=project.level,
-        goal_amount=project.goal_amount,
+        funding_goal=project.funding_goal,
         tags=project.tags,
-        current_amount=project.current_amount,
+        current_funding=project.current_funding,
         deadline=project.deadline,
         delivery_days=project.delivery_days,
         status=project.status,
@@ -293,11 +290,10 @@ def get_related_projects(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Find candidates: Same language, Active/Funded, Not Private, Not Current Project
     query = select(Project).where(
         Project.language == project.language,
         Project.id != project_id,
-        (Project.status == ProjectStatus.ACTIVE) | (Project.status == ProjectStatus.FUNDED),
+        (Project.status == ProjectStatus.FUNDING) | (Project.status == ProjectStatus.SUCCESSFUL),
         Project.is_private == False
     ).options(
         selectinload(Project.teacher),
@@ -306,7 +302,6 @@ def get_related_projects(
 
     candidates = session.exec(query).all()
     
-    # Simple scoring: +2 for same level, +1 for matching tags
     scored_candidates = []
     project_tags = set(project.tags.split(',')) if project.tags else set()
     
@@ -322,12 +317,10 @@ def get_related_projects(
             
         scored_candidates.append((score, p))
     
-    # Sort by score desc and take top 3
     scored_candidates.sort(key=lambda x: x[0], reverse=True)
     
     results = []
     for _, p in scored_candidates[:3]:
-        # Reuse the mapping logic or create a helper function in a real refactor
         teacher_name = p.teacher.full_name if p.teacher else "Unknown"
         requester_name = p.request.user.full_name if (p.request and p.request.user) else None
         requester_id = p.request.user.id if (p.request and p.request.user) else None
@@ -340,9 +333,9 @@ def get_related_projects(
             description=p.description,
             language=p.language,
             level=p.level,
-            goal_amount=p.goal_amount,
+            funding_goal=p.funding_goal,
             tags=p.tags,
-            current_amount=p.current_amount,
+            current_funding=p.current_funding,
             deadline=p.deadline,
             delivery_days=p.delivery_days,
             status=p.status,
@@ -382,9 +375,8 @@ def update_project(
         
     project_data = project_in.dict(exclude_unset=True)
     
-    # Prevent updating goal_amount if project is not in DRAFT status OR if it comes from a request
-    if "goal_amount" in project_data:
-        if project_data["goal_amount"] != project.goal_amount:
+    if "funding_goal" in project_data:
+        if project_data["funding_goal"] != project.funding_goal:
             if project.status != ProjectStatus.DRAFT or project.origin_request_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
@@ -419,13 +411,18 @@ def complete_project(
             detail="Only the project owner can complete the project",
         )
         
-    if project.status != ProjectStatus.IN_PROGRESS:
+    if project.status != ProjectStatus.SUCCESSFUL:
         raise HTTPException(
             status_code=400,
-            detail="Project must be IN_PROGRESS to be completed",
+            detail="Project must be SUCCESSFUL to be completed",
+        )
+
+    if project.stripe_transfer_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This project has already been paid out.",
         )
     
-    # Payout Logic
     teacher = project.teacher
     if not teacher.stripe_account_id:
         raise HTTPException(
@@ -433,9 +430,8 @@ def complete_project(
             detail="Teacher has not connected a Stripe account for payouts",
         )
         
-    # Calculate payout (Platform fee 15%)
     platform_fee_percent = 0.15
-    amount_collected = project.current_amount
+    amount_collected = project.current_funding
     platform_fee = int(amount_collected * platform_fee_percent)
     payout_amount = amount_collected - platform_fee
     
@@ -467,7 +463,6 @@ def cancel_project(
     """
     Cancel a project and refund backers.
     """
-    # Load project with pledges
     project = session.exec(
         select(Project)
         .where(Project.id == project_id)
@@ -489,15 +484,13 @@ def cancel_project(
             detail="Cannot cancel a completed project",
         )
         
-    # Refund Logic
     for pledge in project.pledges:
         try:
             if pledge.status == PledgeStatus.CAPTURED:
-                stripe.Refund.create(payment_intent=pledge.stripe_payment_intent_id)
+                stripe.Refund.create(payment_intent=pledge.payment_intent_id)
                 pledge.status = PledgeStatus.REFUNDED
                 session.add(pledge)
                 
-                # Notify Backer
                 notification = Notification(
                     user_id=pledge.user_id,
                     content=f"Project '{project.title}' was cancelled and you have been refunded.",
@@ -507,27 +500,24 @@ def cancel_project(
                 session.add(notification)
                 
             elif pledge.status == PledgeStatus.AUTHORIZED:
-                stripe.PaymentIntent.cancel(pledge.stripe_payment_intent_id)
+                stripe.PaymentIntent.cancel(pledge.payment_intent_id)
                 pledge.status = PledgeStatus.REFUNDED
                 session.add(pledge)
                 
         except stripe.error.StripeError as e:
-            # Log error but continue trying to refund others
             print(f"Failed to refund pledge {pledge.id}: {str(e)}")
             
     project.status = ProjectStatus.CANCELLED
     session.add(project)
     
-    # Handle Origin Request Logic
     if project.origin_request_id:
         request = session.get(Request, project.origin_request_id)
         if request:
             request.status = RequestStatus.OPEN
-            request.target_teacher_id = None # Release the request
-            request.is_private = False # Ensure it is public for other teachers
+            request.target_teacher_id = None
+            request.is_private = False
             session.add(request)
             
-            # Notify Student
             notification = Notification(
                 user_id=request.user_id,
                 content=f"Project '{project.title}' was cancelled. Your request has been reopened for other teachers.",

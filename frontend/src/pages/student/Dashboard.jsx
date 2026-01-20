@@ -1,24 +1,46 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import client from '../../api/client';
+import { useToast } from '../../context/ToastContext';
 
 const StudentDashboard = () => {
   const [pledges, setPledges] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { addToast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const fetchPledges = useCallback(async () => {
+    try {
+      const response = await client.get('/pledges/me');
+      setPledges(response.data);
+    } catch (error) {
+      console.error("Failed to fetch pledges", error);
+      addToast("Could not load your pledges.", "error");
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
 
   useEffect(() => {
-    const fetchPledges = async () => {
-      try {
-        const response = await client.get('/pledges/me');
-        setPledges(response.data);
-      } catch (error) {
-        console.error("Failed to fetch pledges", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchPledges();
-  }, []);
+    const params = new URLSearchParams(location.search);
+    if (params.get('payment') === 'success') {
+      addToast("Thank you for your pledge! It is being processed and will appear below shortly.", "info");
+      
+      // Remove the query param from the URL
+      navigate(location.pathname, { replace: true });
+
+      // Initial fetch, then delayed refetch
+      fetchPledges();
+      const timer = setTimeout(() => {
+        fetchPledges();
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    } else {
+      fetchPledges();
+    }
+  }, [location, navigate, addToast, fetchPledges]);
 
   const formatCurrency = (amountInCents) => {
     return new Intl.NumberFormat('en-US', {

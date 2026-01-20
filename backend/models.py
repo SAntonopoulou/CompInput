@@ -12,16 +12,15 @@ class UserRole(str, Enum):
 
 class ProjectStatus(str, Enum):
     DRAFT = "draft"
-    ACTIVE = "active"       # Funding is live
-    FUNDED = "funded"       # Goal met, waiting for video
-    IN_PROGRESS = "in_progress" # Teacher started working
-    COMPLETED = "completed" # Video delivered
-    CANCELLED = "cancelled" # Refunded or expired
+    FUNDING = "funding"
+    SUCCESSFUL = "successful"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    ON_HOLD = "on_hold"
 
 class PledgeStatus(str, Enum):
     PENDING = "pending"
-    AUTHORIZED = "authorized" # Money held
-    CAPTURED = "captured"     # Money taken (project funded)
+    CAPTURED = "captured"
     REFUNDED = "refunded"
 
 class RequestStatus(str, Enum):
@@ -47,6 +46,8 @@ class User(SQLModel, table=True):
     # Stripe fields
     stripe_customer_id: Optional[str] = None # For paying students
     stripe_account_id: Optional[str] = None  # For receiving teachers
+    charges_enabled: bool = Field(default=False)
+    payouts_enabled: bool = Field(default=False)
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
@@ -70,8 +71,8 @@ class Project(SQLModel, table=True):
     level: str = Field(index=True) # e.g. "N3", "B1"
     tags: Optional[str] = Field(default=None) # Comma-separated string
     
-    goal_amount: int # Stored in cents (e.g. 1000 = $10.00) to avoid float errors
-    current_amount: int = Field(default=0)
+    funding_goal: int # Stored in cents (e.g. 1000 = $10.00) to avoid float errors
+    current_funding: int = Field(default=0)
     
     deadline: Optional[datetime] = None
     delivery_days: Optional[int] = None # Number of days to deliver after funding
@@ -147,7 +148,8 @@ class Pledge(SQLModel, table=True):
     amount: int # in cents
     status: PledgeStatus = Field(default=PledgeStatus.PENDING)
     
-    stripe_payment_intent_id: Optional[str] = None
+    checkout_session_id: Optional[str] = Field(default=None, unique=True, index=True, nullable=True)
+    payment_intent_id: Optional[str] = Field(default=None, unique=True, index=True, nullable=True)
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     

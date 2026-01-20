@@ -1,167 +1,177 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
+import { useToast } from '../../context/ToastContext';
 
 const CreateProject = () => {
+  const navigate = useNavigate();
+  const { addToast } = useToast();
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    language: 'Japanese',
-    level: 'N5',
-    goal_amount: '',
-    delivery_days: 7, // Default 7 days
-    tags: ''
+    language: '',
+    level: '',
+    funding_goal: '',
+    delivery_days: '',
+    tags: '',
   });
-  const [error, setError] = useState('');
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setLoading(true);
+
+    if (!formData.title || !formData.description || !formData.language || !formData.level || !formData.funding_goal || !formData.delivery_days) {
+      addToast('Please fill out all required fields.', 'error');
+      setLoading(false);
+      return;
+    }
 
     try {
       const payload = {
         ...formData,
-        goal_amount: Math.round(parseFloat(formData.goal_amount) * 100), // Convert to cents
-        delivery_days: parseInt(formData.delivery_days),
+        funding_goal: Math.round(parseFloat(formData.funding_goal) * 100),
+        delivery_days: parseInt(formData.delivery_days, 10),
       };
 
       await client.post('/projects/', payload);
+      addToast('Project created successfully!', 'success');
       navigate('/teacher/dashboard');
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.detail || 'Failed to create project');
+    } catch (error) {
+      console.error('Failed to create project', error);
+      const errorMessage = error.response?.data?.detail || 'Failed to create project. Please try again.';
+      addToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <h1 className="text-3xl font-bold text-gray-900 mb-8">Create New Project</h1>
-      
-      <form onSubmit={handleSubmit} className="bg-white shadow-md rounded-lg p-8 space-y-6">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded relative">
-            {error}
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Project Title</label>
-            <input
-              type="text"
-              name="title"
-              required
-              value={formData.title}
-              onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., Japanese N5 Listening Practice"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Goal Amount (USD)</label>
-            <input
-              type="number"
-              name="goal_amount"
-              required
-              min="1"
-              step="0.01"
-              value={formData.goal_amount}
-              onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="500.00"
-            />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea
-            name="description"
-            required
-            rows={5}
-            value={formData.description}
+      <h1 className="text-3xl font-bold text-gray-900 mb-8">Create a New Project</h1>
+      <form onSubmit={handleSubmit} className="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="title">
+            Project Title
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            id="title"
+            type="text"
+            placeholder="e.g., Japanese Grammar Explained: N5 Level"
+            name="title"
+            value={formData.title}
             onChange={handleChange}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            placeholder="Describe what you will create..."
+            required
           />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Language</label>
-            <select
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="description">
+            Description
+          </label>
+          <textarea
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline h-32"
+            id="description"
+            placeholder="Describe the video content you will create."
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            required
+          />
+        </div>
+        <div className="flex flex-wrap -mx-3 mb-4">
+          <div className="w-full md:w-1/2 px-3 mb-6 md:mb-0">
+            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="language">
+              Language
+            </label>
+            <input
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              id="language"
+              type="text"
+              placeholder="e.g., Japanese"
               name="language"
               value={formData.language}
               onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="Japanese">Japanese</option>
-              <option value="Spanish">Spanish</option>
-              <option value="French">French</option>
-              <option value="German">German</option>
-              <option value="Chinese">Chinese</option>
-            </select>
+              required
+            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Level</label>
-            <select
+          <div className="w-full md:w-1/2 px-3">
+            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="level">
+              Level
+            </label>
+            <input
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              id="level"
+              type="text"
+              placeholder="e.g., N5, A1"
               name="level"
               value={formData.level}
               onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              <option value="N5">N5 (Beginner)</option>
-              <option value="N4">N4</option>
-              <option value="N3">N3</option>
-              <option value="N2">N2</option>
-              <option value="N1">N1 (Advanced)</option>
-              <option value="A1">A1 (Beginner)</option>
-              <option value="A2">A2</option>
-              <option value="B1">B1</option>
-              <option value="B2">B2</option>
-              <option value="C1">C1</option>
-              <option value="C2">C2 (Advanced)</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Days to Deliver</label>
-            <input
-              type="number"
-              name="delivery_days"
               required
+            />
+          </div>
+        </div>
+        <div className="flex flex-wrap -mx-3 mb-4">
+          <div className="w-full md:w-1/2 px-3 mb-6 md:mb-0">
+            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="funding_goal">
+              Funding Goal ($)
+            </label>
+            <input
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              id="funding_goal"
+              type="number"
+              placeholder="e.g., 100"
+              name="funding_goal"
+              value={formData.funding_goal}
+              onChange={handleChange}
               min="1"
+              step="0.01"
+              required
+            />
+          </div>
+          <div className="w-full md:w-1/2 px-3">
+            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="delivery_days">
+              Delivery Days (after funding)
+            </label>
+            <input
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              id="delivery_days"
+              type="number"
+              placeholder="e.g., 14"
+              name="delivery_days"
               value={formData.delivery_days}
               onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., 7"
+              min="1"
+              required
             />
-            <p className="mt-1 text-xs text-gray-500">Days after funding to deliver the video.</p>
           </div>
         </div>
-
-        <div>
-            <label className="block text-sm font-medium text-gray-700">Tags (comma separated)</label>
-            <input
-              type="text"
-              name="tags"
-              value={formData.tags}
-              onChange={handleChange}
-              className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="e.g., Gaming, Grammar, Travel"
-            />
+        <div className="mb-6">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="tags">
+            Tags (comma-separated)
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            id="tags"
+            type="text"
+            placeholder="e.g., grammar, travel, food"
+            name="tags"
+            value={formData.tags}
+            onChange={handleChange}
+          />
         </div>
-
-        <div className="flex justify-end pt-4">
+        <div className="flex items-center justify-between">
           <button
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline disabled:bg-indigo-300"
             type="submit"
-            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+            disabled={loading}
           >
-            Create Project
+            {loading ? 'Creating...' : 'Create Project'}
           </button>
         </div>
       </form>

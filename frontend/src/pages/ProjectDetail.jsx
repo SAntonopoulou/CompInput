@@ -117,7 +117,7 @@ const ProjectDetail = () => {
   if (!project) return <div className="text-center py-10">Project not found</div>;
 
   const percentage = Math.min(
-    (project.current_amount / project.goal_amount) * 100,
+    (project.current_funding / project.funding_goal) * 100,
     100
   );
 
@@ -274,8 +274,8 @@ const ProjectDetail = () => {
           <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 sticky top-6">
             <div className="mb-6">
               <div className="flex justify-between text-base font-medium text-gray-900 mb-1">
-                <span>{formatCurrency(project.current_amount)}</span>
-                <span className="text-gray-500">goal {formatCurrency(project.goal_amount)}</span>
+                <span>{formatCurrency(project.current_funding)}</span>
+                <span className="text-gray-500">goal {formatCurrency(project.funding_goal)}</span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-3">
                 <div
@@ -288,7 +288,7 @@ const ProjectDetail = () => {
               </p>
             </div>
 
-            {project.status === 'active' || project.status === 'funded' ? (
+            {project.status === 'funding' ? (
                 token ? (
                     <PledgeForm projectId={project.id} projectName={project.title} />
                 ) : (

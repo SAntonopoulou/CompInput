@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import client from '../../api/client';
 import VideoUpload from '../../components/VideoUpload';
 import ConfirmationModal from '../../components/ConfirmationModal';
@@ -17,31 +17,44 @@ const Dashboard = () => {
   const [modalConfig, setModalConfig] = useState({});
   
   const { addToast } = useToast();
+  const location = useLocation();
+
+  const fetchData = async () => {
+    try {
+      const userRes = await client.get('/users/me');
+      setUser(userRes.data);
+      
+      const projectsRes = await client.get('/projects/me');
+      // Filter out cancelled projects from the main view
+      const activeProjects = projectsRes.data.filter(p => p.status !== 'cancelled');
+      setProjects(activeProjects);
+    } catch (error) {
+      console.error("Failed to fetch dashboard data", error);
+      addToast("Failed to load dashboard data", 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const userRes = await client.get('/users/me');
-        setUser(userRes.data);
-        
-        const projectsRes = await client.get('/projects/me');
-        // Filter out cancelled projects from the main view
-        const activeProjects = projectsRes.data.filter(p => p.status !== 'cancelled');
-        setProjects(activeProjects);
-      } catch (error) {
-        console.error("Failed to fetch dashboard data", error);
-        addToast("Failed to load dashboard data", 'error');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchData();
-  }, [addToast]);
+
+    // Check for redirect from Stripe onboarding
+    const queryParams = new URLSearchParams(location.search);
+    if (queryParams.get('stripe_return') === 'true') {
+      addToast("Stripe account connected! Your status will update shortly.", 'info');
+      // Refetch data after a delay to allow webhook to process
+      const timer = setTimeout(() => {
+        fetchData();
+      }, 3000); // 3-second delay
+      return () => clearTimeout(timer);
+    }
+  }, [addToast, location.search]);
 
   const handleSetupPayouts = async () => {
     try {
-      const response = await client.post('/users/onboard');
-      window.location.href = response.data.url;
+      const response = await client.post('/users/stripe-onboarding-link');
+      window.location.href = response.data.onboarding_url;
     } catch (error) {
       console.error("Failed to setup payouts", error);
       addToast("Failed to initiate Stripe onboarding.", 'error');
@@ -210,10 +223,10 @@ const Dashboard = () => {
                   <div className="mt-2 sm:flex sm:justify-between">
                     <div className="sm:flex">
                       <p className="flex items-center text-sm text-gray-500">
-                        Goal: ${(project.goal_amount / 100).toFixed(2)}
+                        Goal: ${(project.funding_goal / 100).toFixed(2)}
                       </p>
                       <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                        Raised: ${(project.current_amount / 100).toFixed(2)}
+                        Raised: ${(project.current_funding / 100).toFixed(2)}
                       </p>
                     </div>
                   </div>
