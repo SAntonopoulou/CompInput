@@ -10,8 +10,9 @@ from collections import defaultdict
 
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus
+from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification
 from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
+from ..routers.projects import _cancel_project_logic
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
@@ -91,23 +92,83 @@ def delete_me(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    deleted_user = session.exec(select(User).where(User.email == "deleted@system")).first()
+    # 1. Find or create the deleted@system user
+    deleted_user_email = "deleted_system_placeholder@example.com"
+    deleted_user = session.exec(select(User).where(User.email == deleted_user_email)).first()
     if not deleted_user:
-        deleted_user = User(email="deleted@system", hashed_password="deleted", full_name="Deleted User", role=UserRole.STUDENT)
+        now = datetime.utcnow()
+        deleted_user = User(
+            email=deleted_user_email,
+            hashed_password="placeholder_deleted_password",
+            full_name="Deleted User",
+            role=UserRole.STUDENT,
+            created_at=now,
+            updated_at=now,
+            deleted_at=now
+        )
         session.add(deleted_user)
         session.commit()
         session.refresh(deleted_user)
-    
-    for project in current_user.taught_projects:
-        project.teacher_id = deleted_user.id
-    for pledge in current_user.pledges:
-        pledge.user_id = deleted_user.id
-    for request in current_user.requests:
-        request.user_id = deleted_user.id
 
-    session.delete(current_user)
+    # If the user is a teacher, cancel their non-completed projects
+    if current_user.role == UserRole.TEACHER:
+        teacher_projects = session.exec(
+            select(Project)
+            .where(Project.teacher_id == current_user.id)
+            .options(selectinload(Project.pledges))
+        ).all()
+        for project in teacher_projects:
+            if project.status not in [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]:
+                _cancel_project_logic(project, session)
+
+    # 2. Reassign all associated data to the 'deleted@system' user
+    # Projects
+    for project in session.exec(select(Project).where(Project.teacher_id == current_user.id)).all():
+        project.teacher_id = deleted_user.id
+        session.add(project)
+    # Pledges
+    for pledge in session.exec(select(Pledge).where(Pledge.user_id == current_user.id)).all():
+        pledge.user_id = deleted_user.id
+        session.add(pledge)
+    # Requests
+    for request_obj in session.exec(select(Request).where(Request.user_id == current_user.id)).all():
+        request_obj.user_id = deleted_user.id
+        session.add(request_obj)
+    # ProjectRatings
+    for rating in session.exec(select(ProjectRating).where(ProjectRating.user_id == current_user.id)).all():
+        rating.user_id = deleted_user.id
+        session.add(rating)
+    # VideoComments
+    for comment in session.exec(select(VideoComment).where(VideoComment.user_id == current_user.id)).all():
+        comment.user_id = deleted_user.id
+        session.add(comment)
+    # Notifications
+    for notification in session.exec(select(Notification).where(Notification.user_id == current_user.id)).all():
+        notification.user_id = deleted_user.id
+        session.add(notification)
+    # TeacherVerifications
+    if current_user.role == UserRole.TEACHER:
+        for verification in session.exec(select(TeacherVerification).where(TeacherVerification.teacher_id == current_user.id)).all():
+            verification.teacher_id = deleted_user.id
+            session.add(verification)
+
+    # 3. Anonymize the current_user's data (soft delete)
+    now = datetime.utcnow()
+    current_user.full_name = "Deleted User"
+    current_user.email = f"deleted_{current_user.id}_{int(now.timestamp())}@system.com"
+    current_user.hashed_password = "deleted"
+    current_user.bio = None
+    current_user.languages = None
+    current_user.intro_video_url = None
+    current_user.sample_video_url = None
+    current_user.avatar_url = None
+    current_user.stripe_account_id = None
+    current_user.deleted_at = now
+    current_user.role = UserRole.STUDENT
+
+    session.add(current_user)
     session.commit()
-    return
+    session.refresh(current_user)
 
 @router.get("/{user_id}/profile", response_model=UserProfile)
 def get_user_profile(

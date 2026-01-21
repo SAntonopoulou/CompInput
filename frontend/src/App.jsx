@@ -17,6 +17,7 @@ import Profile from './pages/Profile';
 import Settings from './pages/Settings';
 import Landing from './pages/Landing';
 import AdminDashboard from './pages/admin/AdminDashboard';
+import ProjectManagement from './pages/admin/ProjectManagement';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import TeacherReviews from './pages/TeacherReviews';
@@ -63,6 +64,7 @@ function App() {
                 {/* Admin Routes */}
                 <Route element={<AdminRoute />}>
                   <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                  <Route path="/admin/projects" element={<ProjectManagement />} />
                 </Route>
               </Route>
               

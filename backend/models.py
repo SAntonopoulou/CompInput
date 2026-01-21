@@ -56,6 +56,7 @@ class User(SQLModel, table=True):
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = Field(default=None)
 
     taught_projects: List["Project"] = Relationship(back_populates="teacher")
     pledges: List["Pledge"] = Relationship(back_populates="user")

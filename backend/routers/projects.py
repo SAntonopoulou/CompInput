@@ -60,6 +60,35 @@ class BackerRead(BaseModel):
     full_name: str
     avatar_url: Optional[str] = None
 
+def _cancel_project_logic(project: Project, session: Session):
+    """
+    Helper function to encapsulate the logic for cancelling a project.
+    This function does NOT commit the session.
+    """
+    for pledge in project.pledges:
+        if pledge.status == PledgeStatus.CAPTURED:
+            try:
+                stripe.Refund.create(payment_intent=pledge.payment_intent_id)
+                pledge.status = PledgeStatus.REFUNDED
+                session.add(pledge)
+                notification = Notification(user_id=pledge.user_id, content=f"Project '{project.title}' was cancelled and you have been refunded.", link="/")
+                session.add(notification)
+            except stripe.error.StripeError as e:
+                logger.error(f"Failed to refund pledge {pledge.id}: {e}")
+
+    project.status = ProjectStatus.CANCELLED
+    session.add(project)
+
+    if project.origin_request_id:
+        request = session.get(Request, project.origin_request_id)
+        if request:
+            request.status = RequestStatus.OPEN
+            request.target_teacher_id = None
+            request.is_private = False
+            session.add(request)
+            notification = Notification(user_id=request.user_id, content=f"Project '{project.title}' was cancelled. Your request has been reopened.", link="/requests")
+            session.add(notification)
+
 @router.get("/filter-options", response_model=FilterOptionsRead)
 def get_filter_options(session: Session = Depends(get_session)):
     query = select(Project.language, Project.level).where(Project.status == ProjectStatus.COMPLETED).distinct()
@@ -372,29 +401,7 @@ def cancel_project(
     if project.status == ProjectStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="Cannot cancel a completed project")
 
-    for pledge in project.pledges:
-        if pledge.status == PledgeStatus.CAPTURED:
-            try:
-                stripe.Refund.create(payment_intent=pledge.payment_intent_id)
-                pledge.status = PledgeStatus.REFUNDED
-                session.add(pledge)
-                notification = Notification(user_id=pledge.user_id, content=f"Project '{project.title}' was cancelled and you have been refunded.", link="/")
-                session.add(notification)
-            except stripe.error.StripeError as e:
-                logger.error(f"Failed to refund pledge {pledge.id}: {e}")
-
-    project.status = ProjectStatus.CANCELLED
-    session.add(project)
-
-    if project.origin_request_id:
-        request = session.get(Request, project.origin_request_id)
-        if request:
-            request.status = RequestStatus.OPEN
-            request.target_teacher_id = None
-            request.is_private = False
-            session.add(request)
-            notification = Notification(user_id=request.user_id, content=f"Project '{project.title}' was cancelled. Your request has been reopened.", link="/requests")
-            session.add(notification)
+    _cancel_project_logic(project, session)
 
     session.commit()
     session.refresh(project)

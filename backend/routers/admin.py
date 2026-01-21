@@ -6,9 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
 
 from ..database import get_session
-from ..deps import get_current_admin
+from ..deps import get_current_admin, get_current_user_optional
 from ..models import User, Project, Pledge, UserRole, ProjectStatus, PledgeStatus, Request, Notification, TeacherVerification, VerificationStatus
-from .projects import cancel_project
+from ..routers.projects import _cancel_project_logic
+from ..schemas import ProjectRead, _create_project_read
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -82,13 +83,56 @@ def delete_user(
     session.commit()
     return
 
+@router.get("/projects", response_model=List[ProjectRead])
+def list_all_projects(
+    current_user: User = Depends(get_current_admin),
+    session: Session = Depends(get_session)
+):
+    projects = session.exec(
+        select(Project)
+        .where(Project.status != ProjectStatus.CANCELLED) # Exclude cancelled projects
+        .options(selectinload(Project.teacher))
+    ).all()
+    return [_create_project_read(p, current_user, session) for p in projects]
+
+@router.post("/projects/cleanup-abandoned")
+def cleanup_abandoned_projects(
+    current_user: User = Depends(get_current_admin),
+    session: Session = Depends(get_session)
+):
+    abandoned_projects = session.exec(
+        select(Project)
+        .join(User, Project.teacher_id == User.id)
+        .where(User.deleted_at != None)
+        .where(Project.status.not_in([ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]))
+        .options(selectinload(Project.pledges))
+    ).all()
+
+    count = 0
+    for project in abandoned_projects:
+        _cancel_project_logic(project, session)
+        count += 1
+    
+    session.commit()
+    
+    return {"message": f"Successfully cancelled and refunded {count} abandoned projects."}
+
 @router.delete("/projects/{project_id}")
 def admin_cancel_project(
     project_id: int,
     current_user: User = Depends(get_current_admin),
     session: Session = Depends(get_session)
 ):
-    return cancel_project(project_id=project_id, current_user=current_user, session=session)
+    project = session.exec(select(Project).where(Project.id == project_id).options(selectinload(Project.pledges))).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if project.status in [ProjectStatus.COMPLETED, ProjectStatus.CANCELLED]:
+        raise HTTPException(status_code=400, detail=f"Project is already {project.status.value} and cannot be cancelled.")
+
+    _cancel_project_logic(project, session)
+    session.commit()
+    session.refresh(project)
+    return project
 
 @router.get("/verifications", response_model=List[VerificationRead])
 def list_verifications(
