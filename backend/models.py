@@ -35,6 +35,10 @@ class VerificationStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
 
+class ConversationStatus(str, Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+
 # Database Models
 
 class User(SQLModel, table=True):
@@ -65,6 +69,12 @@ class User(SQLModel, table=True):
     project_ratings: List["ProjectRating"] = Relationship(back_populates="user")
     video_comments: List["VideoComment"] = Relationship(back_populates="user")
     verifications: List["TeacherVerification"] = Relationship(back_populates="teacher")
+
+    # New relationships for messaging
+    sent_messages: List["Message"] = Relationship(back_populates="sender")
+    conversations_as_teacher: List["Conversation"] = Relationship(back_populates="teacher", sa_relationship_kwargs={"foreign_keys": "Conversation.teacher_id"})
+    conversations_as_student: List["Conversation"] = Relationship(back_populates="student", sa_relationship_kwargs={"foreign_keys": "Conversation.student_id"})
+
 
 class TeacherVerification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -194,6 +204,7 @@ class Request(SQLModel, table=True):
     user: Optional[User] = Relationship(back_populates="requests", sa_relationship_kwargs={"foreign_keys": "Request.user_id"})
 
     target_teacher: Optional[User] = Relationship(sa_relationship_kwargs={"foreign_keys": "Request.target_teacher_id"})
+    conversations: List["Conversation"] = Relationship(back_populates="request")
 
 class Notification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -209,3 +220,29 @@ class RequestBlacklist(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     request_id: int = Field(foreign_key="request.id")
     teacher_id: int = Field(foreign_key="user.id")
+
+class Conversation(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    request_id: int = Field(foreign_key="request.id", index=True)
+    teacher_id: int = Field(foreign_key="user.id", index=True)
+    student_id: int = Field(foreign_key="user.id", index=True)
+    status: ConversationStatus = Field(default=ConversationStatus.OPEN)
+    student_demo_video_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    request: Optional["Request"] = Relationship(back_populates="conversations")
+    teacher: Optional["User"] = Relationship(back_populates="conversations_as_teacher", sa_relationship_kwargs={"foreign_keys": "Conversation.teacher_id"})
+    student: Optional["User"] = Relationship(back_populates="conversations_as_student", sa_relationship_kwargs={"foreign_keys": "Conversation.student_id"})
+    messages: List["Message"] = Relationship(back_populates="conversation", sa_relationship_kwargs={"order_by": "Message.created_at"})
+
+class Message(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    conversation_id: int = Field(foreign_key="conversation.id", index=True)
+    sender_id: int = Field(foreign_key="user.id", index=True)
+    content: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    is_read: bool = Field(default=False)
+
+    conversation: Optional["Conversation"] = Relationship(back_populates="messages")
+    sender: Optional["User"] = Relationship(back_populates="sent_messages")

@@ -3,14 +3,20 @@ import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import logo from '../assets/Logo - Rectangle.png';
 import Notifications from './Notifications';
+import InboxDropdown from './InboxDropdown'; // Import InboxDropdown
+import { useInbox } from '../context/InboxContext'; // Import useInbox
+import { FaEnvelope } from 'react-icons/fa'; // Import an icon
 
 const Navbar = () => {
   const navigate = useNavigate();
   const token = localStorage.getItem('token');
   const [user, setUser] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const userMenuRef = useRef(null);
+  const inboxMenuRef = useRef(null);
+  const { unreadCount } = useInbox();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -34,10 +40,13 @@ const Navbar = () => {
       if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
         setShowUserMenu(false);
       }
+      if (inboxMenuRef.current && !inboxMenuRef.current.contains(event.target)) {
+        setShowInbox(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [userMenuRef]);
+  }, [userMenuRef, inboxMenuRef]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -105,6 +114,17 @@ const Navbar = () => {
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
             {user ? (
               <div className="flex items-center space-x-4">
+                <div className="relative" ref={inboxMenuRef}>
+                  <button onClick={() => setShowInbox(!showInbox)} className="text-gray-500 hover:text-gray-700 relative">
+                    <FaEnvelope size={20} />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                  {showInbox && <InboxDropdown closeDropdown={() => setShowInbox(false)} />}
+                </div>
                 <Notifications />
 
                 <div className="relative" ref={userMenuRef}>

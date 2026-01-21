@@ -90,27 +90,14 @@ const RequestList = () => {
     }
   };
 
-  const handleAcceptBudget = async (requestId) => {
+  const handleDiscussWithStudent = async (requestId) => {
     try {
-      const response = await client.post(`/requests/${requestId}/convert`);
-      navigate(`/teacher/projects/${response.data.id}/edit`);
+      const response = await client.post('/conversations/', { request_id: requestId });
+      addToast('Conversation started!', 'success');
+      navigate(`/messages/${response.data.id}`);
     } catch (error) {
-      console.error("Failed to convert request", error);
-      addToast("Failed to fulfill request. Please try again.", 'error');
-    }
-  };
-
-  const handleCounterOffer = async (e) => {
-    e.preventDefault();
-    try {
-      await client.post(`/requests/${selectedRequestId}/counter`, { amount: Math.round(counterOfferAmount * 100) });
-      setShowCounterModal(false);
-      addToast('Counter offer sent!', 'success');
-      const response = await client.get('/requests/');
-      setRequests(response.data);
-    } catch (error) {
-      console.error("Failed to send counter offer", error);
-      addToast('Failed to send counter offer', 'error');
+      console.error("Failed to start conversation", error);
+      addToast(error.response?.data?.detail || 'Failed to start conversation', 'error');
     }
   };
 
@@ -222,8 +209,7 @@ const RequestList = () => {
                     <span className="text-xs text-gray-400">Requested by {req.user_name}</span>
                     {user && user.role === 'teacher' && req.status === 'open' && (
                       <div className="flex space-x-2">
-                          <button onClick={() => { setSelectedRequestId(req.id); setShowCounterModal(true); }} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50">Counter</button>
-                          <button onClick={() => handleAcceptBudget(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Accept</button>
+                          <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
                       </div>
                     )}
                     {user && user.id === req.user_id && (

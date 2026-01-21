@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification
+from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification, Conversation, Message
 from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
 from ..routers.projects import _cancel_project_logic
 
@@ -151,6 +151,18 @@ def delete_me(
         for verification in session.exec(select(TeacherVerification).where(TeacherVerification.teacher_id == current_user.id)).all():
             verification.teacher_id = deleted_user.id
             session.add(verification)
+    
+    # Conversations and Messages
+    for conv in session.exec(select(Conversation).where(Conversation.student_id == current_user.id)).all():
+        conv.student_demo_video_url = None
+        conv.student_id = deleted_user.id
+        session.add(conv)
+    for conv in session.exec(select(Conversation).where(Conversation.teacher_id == current_user.id)).all():
+        conv.teacher_id = deleted_user.id
+        session.add(conv)
+    for msg in session.exec(select(Message).where(Message.sender_id == current_user.id)).all():
+        msg.sender_id = deleted_user.id
+        session.add(msg)
 
     # 3. Anonymize the current_user's data (soft delete)
     now = datetime.utcnow()
@@ -335,7 +347,7 @@ def search_teachers(
     query: str = Query(..., min_length=1),
     session: Session = Depends(get_session)
 ):
-    statement = select(User).where(User.role == UserRole.TEACHER).where(User.full_name.ilike(f"%{query}%"))
+    statement = select(User).where(User.role == UserRole.TEACH-ER).where(User.full_name.ilike(f"%{query}%"))
     teachers = session.exec(statement).all()
     return [TeacherRead(id=t.id, full_name=t.full_name) for t in teachers]
 
