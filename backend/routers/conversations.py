@@ -1,6 +1,6 @@
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
@@ -9,6 +9,7 @@ import json
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message
+from ..security import decode_access_token
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -91,27 +92,50 @@ class InboxSummary(BaseModel):
 # ConnectionManager for WebSockets
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: Dict[int, List[WebSocket]] = {}
+        # Stores {conversation_id: [(websocket, user_id), ...]}
+        self.active_conversation_connections: Dict[int, List[Tuple[WebSocket, int]]] = {}
+        # Stores {user_id: [websocket, ...]} for global notifications
+        self.active_user_connections: Dict[int, List[WebSocket]] = {}
 
-    async def connect(self, websocket: WebSocket, conversation_id: int):
+    async def connect_conversation(self, websocket: WebSocket, conversation_id: int, user_id: int):
         await websocket.accept()
-        if conversation_id not in self.active_connections:
-            self.active_connections[conversation_id] = []
-        self.active_connections[conversation_id].append(websocket)
+        if conversation_id not in self.active_conversation_connections:
+            self.active_conversation_connections[conversation_id] = []
+        self.active_conversation_connections[conversation_id].append((websocket, user_id))
 
-    def disconnect(self, websocket: WebSocket, conversation_id: int):
-        if conversation_id in self.active_connections:
-            self.active_connections[conversation_id].remove(websocket)
-            if not self.active_connections[conversation_id]:
-                del self.active_connections[conversation_id]
+    def disconnect_conversation(self, websocket: WebSocket, conversation_id: int, user_id: int):
+        if conversation_id in self.active_conversation_connections:
+            self.active_conversation_connections[conversation_id].remove((websocket, user_id))
+            if not self.active_conversation_connections[conversation_id]:
+                del self.active_conversation_connections[conversation_id]
 
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str, conversation_id: int):
-        if conversation_id in self.active_connections:
-            for connection in self.active_connections[conversation_id]:
+    async def broadcast_to_conversation(self, message: str, conversation_id: int):
+        if conversation_id in self.active_conversation_connections:
+            for connection, _ in self.active_conversation_connections[conversation_id]:
                 await connection.send_text(message)
+
+    def is_user_in_conversation(self, user_id: int, conversation_id: int) -> bool:
+        if conversation_id in self.active_conversation_connections:
+            return any(uid == user_id for _, uid in self.active_conversation_connections[conversation_id])
+        return False
+
+    async def connect_user(self, websocket: WebSocket, user_id: int):
+        await websocket.accept()
+        if user_id not in self.active_user_connections:
+            self.active_user_connections[user_id] = []
+        self.active_user_connections[user_id].append(websocket)
+
+    def disconnect_user(self, websocket: WebSocket, user_id: int):
+        if user_id in self.active_user_connections:
+            self.active_user_connections[user_id].remove(websocket)
+            if not self.active_user_connections[user_id]:
+                del self.active_user_connections[user_id]
+
+    async def send_user_notification(self, user_id: int, message: str):
+        if user_id in self.active_user_connections:
+            for connection in self.active_user_connections[user_id]:
+                await connection.send_text(message)
+
 
 manager = ConnectionManager()
 
@@ -399,7 +423,22 @@ async def send_message(
         replied_to_sender_name=replied_to_sender_name
     )
 
-    await manager.broadcast(message_read_instance.model_dump_json(), conversation_id)
+    await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
+
+    # Send notification to the other participant
+    recipient_id = conversation.student_id if current_user.id == conversation.teacher_id else conversation.teacher_id
+    if recipient_id != current_user.id:
+        # Only send notification if the recipient is NOT currently in this conversation
+        if not manager.is_user_in_conversation(recipient_id, conversation_id):
+            # Calculate new unread count for the recipient
+            unread_count = session.exec(
+                select(func.count(Message.id))
+                .where(Message.conversation_id == conversation.id)
+                .where(Message.sender_id != recipient_id)
+                .where(Message.is_read == False)
+            ).one()
+            notification_payload = json.dumps({"type": "UNREAD_COUNT_UPDATE", "unread_count": unread_count})
+            await manager.send_user_notification(recipient_id, notification_payload)
 
     return message_read_instance
 
@@ -449,28 +488,84 @@ def update_demo_video_url(
 
     return _create_conversation_read(conversation, current_user, session)
 
+async def get_user_from_token(token: str, session: Session) -> Optional[User]:
+    if not token:
+        return None
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    return session.get(User, int(user_id))
+
 @router.websocket("/{conversation_id}/ws")
-async def websocket_endpoint(websocket: WebSocket, conversation_id: int, session: Session = Depends(get_session)):
-    # Basic authentication for WebSocket
-    # In a real app, you'd validate a token passed in headers or query params
-    # For now, we'll allow connection but messages will be tied to sender_id from HTTP endpoint
+async def websocket_endpoint(websocket: WebSocket, conversation_id: int, token: str = Query(...), session: Session = Depends(get_session)):
+    user = await get_user_from_token(token, session)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
+        return
     
-    # Check if conversation exists
+    # Check if user is part of this conversation
     conversation = session.get(Conversation, conversation_id)
-    if not conversation:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Conversation not found")
+    if not conversation or not (conversation.teacher_id == user.id or conversation.student_id == user.id):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Not authorized for this conversation")
         return
 
-    await manager.connect(websocket, conversation_id)
+    await manager.connect_conversation(websocket, conversation_id, user.id)
     try:
         while True:
-            # We primarily use this for server-to-client, so we can just receive and ignore
-            # or log client messages if any.
             data = await websocket.receive_text()
-            # print(f"Received message from client in conv {conversation_id}: {data}")
+            try:
+                payload = json.loads(data)
+                if payload.get("type") == "READ_RECEIPT":
+                    message_ids = payload.get("message_ids", [])
+                    if message_ids:
+                        # Update messages in bulk
+                        stmt = select(Message).where(Message.id.in_(message_ids)).where(Message.sender_id != user.id)
+                        messages_to_update = session.exec(stmt).all()
+                        for msg in messages_to_update:
+                            msg.is_read = True
+                            session.add(msg)
+                        session.commit()
+
+                        # Recalculate total unread count for the user
+                        total_unread_count = 0
+                        user_conversations = session.exec(select(Conversation).where((Conversation.teacher_id == user.id) | (Conversation.student_id == user.id))).all()
+                        for conv in user_conversations:
+                            total_unread_count += session.exec(
+                                select(func.count(Message.id))
+                                .where(Message.conversation_id == conv.id)
+                                .where(Message.sender_id != user.id)
+                                .where(Message.is_read == False)
+                            ).one()
+                        
+                        notification_payload = json.dumps({"type": "UNREAD_COUNT_UPDATE", "unread_count": total_unread_count})
+                        await manager.send_user_notification(user.id, notification_payload)
+            except json.JSONDecodeError:
+                pass # Ignore non-JSON messages
     except WebSocketDisconnect:
-        manager.disconnect(websocket, conversation_id)
-        # print(f"Client disconnected from conversation {conversation_id}")
+        manager.disconnect_conversation(websocket, conversation_id, user.id)
     except Exception as e:
-        # print(f"WebSocket error in conversation {conversation_id}: {e}")
-        manager.disconnect(websocket, conversation_id)
+        print(f"WebSocket error in conversation {conversation_id}: {e}")
+        manager.disconnect_conversation(websocket, conversation_id, user.id)
+
+
+@router.websocket("/ws")
+async def websocket_global_notifications_endpoint(websocket: WebSocket, token: str = Query(...), session: Session = Depends(get_session)):
+    user = await get_user_from_token(token, session)
+    if not user:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
+        return
+
+    await manager.connect_user(websocket, user.id)
+    try:
+        while True:
+            # This endpoint is primarily for server-to-client notifications,
+            # so we just keep the connection open.
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect_user(websocket, user.id)
+    except Exception as e:
+        print(f"Global WebSocket error for user {user.id}: {e}")
+        manager.disconnect_user(websocket, user.id)

@@ -89,11 +89,11 @@ const Inbox = () => {
 
   // WebSocket connection
   useEffect(() => {
-    if (!conversationId || !user) { // Ensure user is loaded before connecting
+    if (!conversationId || !user || !token) { // Ensure user and token are loaded before connecting
       return;
     }
 
-    const wsUrl = `ws://${window.location.host.split(':')[0]}:8000/conversations/${conversationId}/ws`;
+    const wsUrl = `ws://${window.location.host.split(':')[0]}:8000/conversations/${conversationId}/ws?token=${token}`;
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
@@ -104,6 +104,10 @@ const Inbox = () => {
       const incomingMessage = JSON.parse(event.data);
       setCurrentConversation((prev) => {
         if (prev && prev.id === incomingMessage.conversation_id) {
+          // Send read receipt for the new message
+          if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+            ws.current.send(JSON.stringify({ type: "READ_RECEIPT", message_ids: [incomingMessage.id] }));
+          }
           return { ...prev, messages: [...prev.messages, incomingMessage] };
         }
         return prev;
@@ -127,7 +131,7 @@ const Inbox = () => {
         ws.current.close();
       }
     };
-  }, [conversationId, user, fetchUnreadCount]); // Added user to dependency array
+  }, [conversationId, user, token, fetchUnreadCount]); // Added user and token to dependency array
 
   // Scroll to bottom on new messages
   useEffect(() => {

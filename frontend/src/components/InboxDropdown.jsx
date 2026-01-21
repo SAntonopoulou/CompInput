@@ -6,7 +6,7 @@ import { useInbox } from '../context/InboxContext';
 const InboxDropdown = ({ closeDropdown }) => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const { fetchUnreadCount } = useInbox();
+  const { unreadCount, fetchUnreadCount } = useInbox(); // Destructure unreadCount
   const token = localStorage.getItem('token'); // Get token directly
 
   useEffect(() => {
@@ -28,7 +28,7 @@ const InboxDropdown = ({ closeDropdown }) => {
     };
 
     fetchConversations();
-  }, [fetchUnreadCount, token]); // Add token to dependency array
+  }, [unreadCount, token]); // Changed dependency to unreadCount
 
   const formatTime = (dateString) => {
     const date = new Date(dateString);
