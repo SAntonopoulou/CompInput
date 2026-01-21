@@ -39,6 +39,15 @@ class ConversationStatus(str, Enum):
     OPEN = "open"
     CLOSED = "closed"
 
+class MessageType(str, Enum):
+    TEXT = "text"
+    OFFER = "offer"
+
+class OfferStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
 # Database Models
 
 class User(SQLModel, table=True):
@@ -244,6 +253,11 @@ class Message(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_read: bool = Field(default=False)
     replied_to_message_id: Optional[int] = Field(default=None, foreign_key="message.id")
+
+    message_type: MessageType = Field(default=MessageType.TEXT)
+    offer_description: Optional[str] = None
+    offer_price: Optional[int] = None
+    offer_status: Optional[OfferStatus] = Field(default=None)
 
     conversation: Optional["Conversation"] = Relationship(back_populates="messages")
     sender: Optional["User"] = Relationship(back_populates="sent_messages")

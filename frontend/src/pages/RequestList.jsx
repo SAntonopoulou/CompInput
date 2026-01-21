@@ -21,9 +21,6 @@ const RequestList = () => {
   const [teacherSearch, setTeacherSearch] = useState('');
   const [teacherResults, setTeacherResults] = useState([]);
   const [selectedTeacherName, setSelectedTeacherName] = useState('');
-  const [counterOfferAmount, setCounterOfferAmount] = useState(0);
-  const [showCounterModal, setShowCounterModal] = useState(false);
-  const [selectedRequestId, setSelectedRequestId] = useState(null);
   const [availableFilters, setAvailableFilters] = useState({ languages: [] });
   
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
@@ -98,28 +95,6 @@ const RequestList = () => {
     } catch (error) {
       console.error("Failed to start conversation", error);
       addToast(error.response?.data?.detail || 'Failed to start conversation', 'error');
-    }
-  };
-
-  const handleAcceptOffer = async (requestId) => {
-    try {
-      const response = await client.post(`/requests/${requestId}/accept-offer`);
-      navigate(`/projects/${response.data.id}`);
-    } catch (error) {
-      console.error("Failed to accept offer", error);
-      addToast('Failed to accept offer', 'error');
-    }
-  };
-
-  const handleRejectOffer = async (requestId) => {
-    try {
-      await client.post(`/requests/${requestId}/reject-offer`);
-      addToast('Offer rejected', 'info');
-      const response = await client.get('/requests/');
-      setRequests(response.data);
-    } catch (error) {
-      console.error("Failed to reject offer", error);
-      addToast('Failed to reject offer', 'error');
     }
   };
 
@@ -203,7 +178,6 @@ const RequestList = () => {
                   <p className="text-sm text-gray-500 mb-4 line-clamp-3">{req.description}</p>
                   <div className="mb-4">
                       <p className="text-sm font-medium text-gray-900">Budget: {formatCurrency(req.budget)}</p>
-                      {req.status === 'negotiating' && <p className="text-sm font-medium text-orange-600 mt-1">Counter Offer: {formatCurrency(req.counter_offer_amount)}</p>}
                   </div>
                   <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
                     <span className="text-xs text-gray-400">Requested by {req.user_name}</span>
@@ -212,19 +186,8 @@ const RequestList = () => {
                           <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
                       </div>
                     )}
-                    {user && user.id === req.user_id && (
-                        <div className="flex space-x-2">
-                            {req.status === 'negotiating' && (
-                                <>
-                                  <button onClick={() => handleRejectOffer(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-red-700 bg-white hover:bg-red-50">Reject</button>
-                                  <button onClick={() => handleAcceptOffer(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">Accept Offer</button>
-                                </>
-                            )}
-                            {(req.status === 'open' || req.status === 'negotiating') && <button onClick={() => confirmDeleteRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>}
-                        </div>
-                    )}
-                    {user && user.id === req.user_id && req.status === 'rejected' && <span className="text-xs text-red-500 font-medium">Offer Rejected</span>}
-                     {user && user.id === req.user_id && req.status === 'accepted' && <span className="text-xs text-green-500 font-medium">Accepted</span>}
+                    {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && <button onClick={() => confirmDeleteRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>}
+                    {user && user.id === req.user_id && req.status === 'accepted' && <span className="text-xs text-green-500 font-medium">Accepted</span>}
                   </div>
                 </div>
               </div>
@@ -273,26 +236,6 @@ const RequestList = () => {
                 <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                   <button type="submit" className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Post Request</button>
                   <button type="button" onClick={() => setShowModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showCounterModal && (
-          <div className="fixed z-10 inset-0 overflow-y-auto"><div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true"><div className="absolute inset-0 bg-gray-500 opacity-75"></div></div>
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <form onSubmit={handleCounterOffer}>
-                <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                  <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Make Counter Offer</h3>
-                  <div><label className="block text-sm font-medium text-gray-700">New Price (EUR)</label><input type="number" min="1" required className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={counterOfferAmount} onChange={(e) => setCounterOfferAmount(e.target.value)} /></div>
-                </div>
-                <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                  <button type="submit" className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Send Offer</button>
-                  <button type="button" onClick={() => setShowCounterModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button>
                 </div>
               </form>
             </div>

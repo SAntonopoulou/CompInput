@@ -165,189 +165,189 @@ def delete_request(
     session.commit()
     return {"ok": True}
 
-@router.post("/{request_id}/convert", response_model=ProjectResponse)
-def convert_request_to_project(
-    request_id: int,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """
-    Convert a request into a fundable project (Accept Budget). Only teachers can do this.
-    """
-    if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers or admins can convert requests to projects",
-        )
+# @router.post("/{request_id}/convert", response_model=ProjectResponse)
+# def convert_request_to_project(
+#     request_id: int,
+#     current_user: User = Depends(get_current_user),
+#     session: Session = Depends(get_session)
+# ):
+#     """
+#     Convert a request into a fundable project (Accept Budget). Only teachers can do this.
+#     """
+#     if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
+#         raise HTTPException(
+#             status_code=status.HTTP_403_FORBIDDEN,
+#             detail="Only teachers or admins can convert requests to projects",
+#         )
         
-    request = session.get(Request, request_id)
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
+#     request = session.get(Request, request_id)
+#     if not request:
+#         raise HTTPException(status_code=404, detail="Request not found")
     
-    # Create Project from Request
-    project = Project(
-        title=request.title,
-        description=request.description,
-        language=request.language,
-        level=request.level,
-        funding_goal=request.budget, # Use the student's budget
-        status=ProjectStatus.FUNDING,
-        teacher_id=current_user.id,
-        origin_request_id=request.id,
-        is_private=request.is_private
-    )
+#     # Create Project from Request
+#     project = Project(
+#         title=request.title,
+#         description=request.description,
+#         language=request.language,
+#         level=request.level,
+#         funding_goal=request.budget, # Use the student's budget
+#         status=ProjectStatus.FUNDING,
+#         teacher_id=current_user.id,
+#         origin_request_id=request.id,
+#         is_private=request.is_private
+#     )
     
-    request.status = RequestStatus.ACCEPTED
-    session.add(request)
-    session.add(project)
-    session.commit()
-    session.refresh(project)
+#     request.status = RequestStatus.ACCEPTED
+#     session.add(request)
+#     session.add(project)
+#     session.commit()
+#     session.refresh(project)
     
-    # Notify Student
-    notification = Notification(
-        user_id=request.user_id,
-        content=f"Teacher {current_user.full_name} accepted your request '{request.title}'!",
-        is_read=False,
-        link=f"/projects/{project.id}"
-    )
-    session.add(notification)
-    session.commit()
+#     # Notify Student
+#     notification = Notification(
+#         user_id=request.user_id,
+#         content=f"Teacher {current_user.full_name} accepted your request '{request.title}'!",
+#         is_read=False,
+#         link=f"/projects/{project.id}"
+#     )
+#     session.add(notification)
+#     session.commit()
     
-    return project
+#     return project
 
-@router.post("/{request_id}/counter", response_model=Request)
-def counter_offer(
-    request_id: int,
-    offer: CounterOffer,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """
-    Teacher proposes a new price.
-    """
-    if current_user.role != UserRole.TEACHER:
-        raise HTTPException(status_code=403, detail="Only teachers can make counter offers")
+# @router.post("/{request_id}/counter", response_model=Request)
+# def counter_offer(
+#     request_id: int,
+#     offer: CounterOffer,
+#     current_user: User = Depends(get_current_user),
+#     session: Session = Depends(get_session)
+# ):
+#     """
+#     Teacher proposes a new price.
+#     """
+#     if current_user.role != UserRole.TEACHER:
+#         raise HTTPException(status_code=403, detail="Only teachers can make counter offers")
         
-    request = session.get(Request, request_id)
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
+#     request = session.get(Request, request_id)
+#     if not request:
+#         raise HTTPException(status_code=404, detail="Request not found")
         
-    request.counter_offer_amount = offer.amount
-    request.status = RequestStatus.NEGOTIATING
+#     request.counter_offer_amount = offer.amount
+#     request.status = RequestStatus.NEGOTIATING
     
-    # If no target teacher was set, the countering teacher claims it
-    if not request.target_teacher_id:
-        request.target_teacher_id = current_user.id
+#     # If no target teacher was set, the countering teacher claims it
+#     if not request.target_teacher_id:
+#         request.target_teacher_id = current_user.id
         
-    session.add(request)
-    session.commit()
-    session.refresh(request)
+#     session.add(request)
+#     session.commit()
+#     session.refresh(request)
     
-    # Notify Student
-    notification = Notification(
-        user_id=request.user_id,
-        content=f"Teacher {current_user.full_name} proposed a new price for your request: {request.title}",
-        is_read=False,
-        link="/requests"
-    )
-    session.add(notification)
-    session.commit()
+#     # Notify Student
+#     notification = Notification(
+#         user_id=request.user_id,
+#         content=f"Teacher {current_user.full_name} proposed a new price for your request: {request.title}",
+#         is_read=False,
+#         link="/requests"
+#     )
+#     session.add(notification)
+#     session.commit()
     
-    return request
+#     return request
 
-@router.post("/{request_id}/accept-offer", response_model=ProjectResponse)
-def accept_offer(
-    request_id: int,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """
-    Student accepts the teacher's counter offer.
-    """
-    request = session.get(Request, request_id)
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
+# @router.post("/{request_id}/accept-offer", response_model=ProjectResponse)
+# def accept_offer(
+#     request_id: int,
+#     current_user: User = Depends(get_current_user),
+#     session: Session = Depends(get_session)
+# ):
+#     """
+#     Student accepts the teacher's counter offer.
+#     """
+#     request = session.get(Request, request_id)
+#     if not request:
+#         raise HTTPException(status_code=404, detail="Request not found")
         
-    if request.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+#     if request.user_id != current_user.id:
+#         raise HTTPException(status_code=403, detail="Not authorized")
         
-    if not request.counter_offer_amount:
-        raise HTTPException(status_code=400, detail="No counter offer to accept")
+#     if not request.counter_offer_amount:
+#         raise HTTPException(status_code=400, detail="No counter offer to accept")
         
-    if not request.target_teacher_id:
-         raise HTTPException(status_code=400, detail="Teacher not identified for this offer")
+#     if not request.target_teacher_id:
+#          raise HTTPException(status_code=400, detail="Teacher not identified for this offer")
 
-    project = Project(
-        title=request.title,
-        description=request.description,
-        language=request.language,
-        level=request.level,
-        funding_goal=request.counter_offer_amount,
-        status=ProjectStatus.FUNDING, # Ready for funding immediately
-        teacher_id=request.target_teacher_id,
-        origin_request_id=request.id,
-        is_private=request.is_private
-    )
+#     project = Project(
+#         title=request.title,
+#         description=request.description,
+#         language=request.language,
+#         level=request.level,
+#         funding_goal=request.counter_offer_amount,
+#         status=ProjectStatus.FUNDING, # Ready for funding immediately
+#         teacher_id=request.target_teacher_id,
+#         origin_request_id=request.id,
+#         is_private=request.is_private
+#     )
     
-    request.status = RequestStatus.ACCEPTED
-    session.add(request)
-    session.add(project)
-    session.commit()
-    session.refresh(project)
+#     request.status = RequestStatus.ACCEPTED
+#     session.add(request)
+#     session.add(project)
+#     session.commit()
+#     session.refresh(project)
     
-    # Notify Teacher
-    notification = Notification(
-        user_id=request.target_teacher_id,
-        content=f"Offer accepted! Project '{project.title}' is now created.",
-        is_read=False,
-        link=f"/projects/{project.id}"
-    )
-    session.add(notification)
-    session.commit()
+#     # Notify Teacher
+#     notification = Notification(
+#         user_id=request.target_teacher_id,
+#         content=f"Offer accepted! Project '{project.title}' is now created.",
+#         is_read=False,
+#         link=f"/projects/{project.id}"
+#     )
+#     session.add(notification)
+#     session.commit()
     
-    return project
+#     return project
 
-@router.post("/{request_id}/reject-offer", response_model=Request)
-def reject_offer(
-    request_id: int,
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """
-    Student rejects the offer.
-    """
-    request = session.get(Request, request_id)
-    if not request:
-        raise HTTPException(status_code=404, detail="Request not found")
+# @router.post("/{request_id}/reject-offer", response_model=Request)
+# def reject_offer(
+#     request_id: int,
+#     current_user: User = Depends(get_current_user),
+#     session: Session = Depends(get_session)
+# ):
+#     """
+#     Student rejects the offer.
+#     """
+#     request = session.get(Request, request_id)
+#     if not request:
+#         raise HTTPException(status_code=404, detail="Request not found")
         
-    if request.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+#     if request.user_id != current_user.id:
+#         raise HTTPException(status_code=403, detail="Not authorized")
         
-    # Capture the teacher ID before clearing it to notify them
-    previous_teacher_id = request.target_teacher_id
+#     # Capture the teacher ID before clearing it to notify them
+#     previous_teacher_id = request.target_teacher_id
 
-    # Reset request to OPEN and PUBLIC so other teachers can claim it
-    request.status = RequestStatus.OPEN
-    request.counter_offer_amount = None
-    request.target_teacher_id = None
-    request.is_private = False
+#     # Reset request to OPEN and PUBLIC so other teachers can claim it
+#     request.status = RequestStatus.OPEN
+#     request.counter_offer_amount = None
+#     request.target_teacher_id = None
+#     request.is_private = False
 
-    session.add(request)
-    session.commit()
-    session.refresh(request)
+#     session.add(request)
+#     session.commit()
+#     session.refresh(request)
     
-    if previous_teacher_id:
-        # Add to blacklist so this teacher doesn't see it again
-        blacklist = RequestBlacklist(request_id=request.id, teacher_id=previous_teacher_id)
-        session.add(blacklist)
+#     if previous_teacher_id:
+#         # Add to blacklist so this teacher doesn't see it again
+#         blacklist = RequestBlacklist(request_id=request.id, teacher_id=previous_teacher_id)
+#         session.add(blacklist)
 
-        notification = Notification(
-            user_id=previous_teacher_id,
-            content=f"Offer rejected for '{request.title}'. The request has been re-opened.",
-            is_read=False,
-            link="/requests"
-        )
-        session.add(notification)
-        session.commit()
+#         notification = Notification(
+#             user_id=previous_teacher_id,
+#             content=f"Offer rejected for '{request.title}'. The request has been re-opened.",
+#             is_read=False,
+#             link="/requests"
+#         )
+#         session.add(notification)
+#         session.commit()
         
-    return request
+#     return request

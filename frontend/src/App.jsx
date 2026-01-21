@@ -24,6 +24,7 @@ import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import TeacherReviews from './pages/TeacherReviews';
 import Archive from './pages/Archive';
+import ArchivedConversations from './pages/ArchivedConversations';
 import TeacherArchive from './pages/TeacherArchive';
 import StudentArchive from './pages/student/Archive'; // Import the new component
 
@@ -73,6 +74,8 @@ function App() {
                   {/* Messaging Routes */}
                   <Route path="/messages" element={<Inbox />} />
                   <Route path="/messages/:conversationId" element={<Inbox />} />
+                  <Route path="/messages/archive" element={<ArchivedConversations />} />
+                  <Route path="/messages/archive/:conversationId" element={<ArchivedConversations />} />
                 </Route>
                 
                 {/* Catch-all route */}

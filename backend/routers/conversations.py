@@ -8,7 +8,7 @@ import json
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message
+from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType, OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist
 from ..security import decode_access_token
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -20,6 +20,10 @@ class ConversationCreate(BaseModel):
 class MessageCreate(BaseModel):
     content: str
     replied_to_message_id: Optional[int] = None
+
+class OfferCreate(BaseModel):
+    offer_description: str
+    offer_price: int
 
 class DemoVideoUpdate(BaseModel):
     url: str
@@ -45,6 +49,10 @@ class MessageRead(BaseModel):
     replied_to_message_id: Optional[int] = None
     replied_to_message_content: Optional[str] = None
     replied_to_sender_name: Optional[str] = None
+    message_type: MessageType
+    offer_description: Optional[str] = None
+    offer_price: Optional[int] = None
+    offer_status: Optional[OfferStatus] = None
 
     class Config:
         from_attributes = True
@@ -175,7 +183,11 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
             sender_avatar_url=sender_user.avatar_url if sender_user else None,
             replied_to_message_id=msg.replied_to_message_id,
             replied_to_message_content=replied_to_message_content,
-            replied_to_sender_name=replied_to_sender_name
+            replied_to_sender_name=replied_to_sender_name,
+            message_type=msg.message_type,
+            offer_description=msg.offer_description,
+            offer_price=msg.offer_price,
+            offer_status=msg.offer_status
         ))
 
     return ConversationRead(
@@ -294,6 +306,7 @@ def list_my_conversations(
             (Conversation.teacher_id == current_user.id) |
             (Conversation.student_id == current_user.id)
         )
+        .where(Conversation.status == ConversationStatus.OPEN)
         .options(
             selectinload(Conversation.request),
             selectinload(Conversation.teacher),
@@ -302,6 +315,27 @@ def list_my_conversations(
         .order_by(Conversation.updated_at.desc())
     ).all()
 
+    return [_create_conversation_summary_read(conv, current_user, session) for conv in conversations]
+
+@router.get("/archive", response_model=List[ConversationSummaryRead])
+def list_archived_conversations(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    conversations = session.exec(
+        select(Conversation)
+        .where(
+            (Conversation.teacher_id == current_user.id) |
+            (Conversation.student_id == current_user.id)
+        )
+        .where(Conversation.status == ConversationStatus.CLOSED)
+        .options(
+            selectinload(Conversation.request),
+            selectinload(Conversation.teacher),
+            selectinload(Conversation.student)
+        )
+        .order_by(Conversation.updated_at.desc())
+    ).all()
     return [_create_conversation_summary_read(conv, current_user, session) for conv in conversations]
 
 @router.get("/summary", response_model=InboxSummary)
@@ -315,6 +349,7 @@ def get_inbox_summary(
             (Conversation.teacher_id == current_user.id) |
             (Conversation.student_id == current_user.id)
         )
+        .where(Conversation.status == ConversationStatus.OPEN)
         .options(
             selectinload(Conversation.request),
             selectinload(Conversation.teacher),
@@ -420,7 +455,11 @@ async def send_message(
         sender_avatar_url=sender_user.avatar_url if sender_user else None,
         replied_to_message_id=message.replied_to_message_id,
         replied_to_message_content=replied_to_message_content,
-        replied_to_sender_name=replied_to_sender_name
+        replied_to_sender_name=replied_to_sender_name,
+        message_type=message.message_type,
+        offer_description=message.offer_description,
+        offer_price=message.offer_price,
+        offer_status=message.offer_status
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -441,6 +480,165 @@ async def send_message(
             await manager.send_user_notification(recipient_id, notification_payload)
 
     return message_read_instance
+
+@router.post("/{conversation_id}/offer", response_model=MessageRead)
+async def make_offer(
+    conversation_id: int,
+    offer_in: OfferCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    
+    if current_user.id != conversation.teacher_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the teacher can make an offer.")
+    
+    if conversation.status == ConversationStatus.CLOSED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot make an offer in a closed conversation.")
+
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id,
+        content=f"Offer: {offer_in.offer_description}",
+        message_type=MessageType.OFFER,
+        offer_description=offer_in.offer_description,
+        offer_price=offer_in.offer_price,
+        offer_status=OfferStatus.PENDING
+    )
+    session.add(message)
+    conversation.updated_at = datetime.utcnow()
+    session.add(conversation)
+    session.commit()
+    session.refresh(message)
+    session.refresh(conversation)
+
+    message_read_instance = MessageRead(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_id=message.sender_id,
+        content=message.content,
+        created_at=message.created_at,
+        is_read=False,
+        sender_full_name=current_user.full_name,
+        sender_avatar_url=current_user.avatar_url,
+        message_type=message.message_type,
+        offer_description=message.offer_description,
+        offer_price=message.offer_price,
+        offer_status=message.offer_status
+    )
+
+    await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
+
+    return message_read_instance
+
+@router.post("/messages/{message_id}/accept-offer", response_model=Project)
+async def accept_offer(
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    offer_message = session.get(Message, message_id)
+    if not offer_message or offer_message.message_type != MessageType.OFFER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")
+    
+    conversation = session.get(Conversation, offer_message.conversation_id)
+    if not conversation or current_user.id != conversation.student_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to accept this offer.")
+    
+    if offer_message.offer_status != OfferStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Offer is not pending.")
+
+    offer_message.offer_status = OfferStatus.ACCEPTED
+    session.add(offer_message)
+
+    request = session.get(Request, conversation.request_id)
+    request.status = RequestStatus.ACCEPTED
+    session.add(request)
+
+    new_project = Project(
+        title=request.title,
+        description=offer_message.offer_description,
+        language=request.language,
+        level=request.level,
+        funding_goal=offer_message.offer_price,
+        teacher_id=conversation.teacher_id,
+        origin_request_id=request.id,
+        status=ProjectStatus.FUNDING
+    )
+    session.add(new_project)
+    session.flush() # To get the new_project.id
+
+    # Broadcast acceptance before closing to allow for redirect
+    await manager.broadcast_to_conversation(json.dumps({"type": "OFFER_ACCEPTED", "project_id": new_project.id}), conversation.id)
+
+    # Close all conversations for this request
+    all_conversations = session.exec(select(Conversation).where(Conversation.request_id == request.id)).all()
+    for conv in all_conversations:
+        conv.status = ConversationStatus.CLOSED
+        session.add(conv)
+        await manager.broadcast_to_conversation(json.dumps({"type": "CONVERSATION_CLOSED"}), conv.id)
+
+    session.commit()
+    session.refresh(new_project)
+    
+    return new_project
+
+@router.post("/messages/{message_id}/reject-offer")
+async def reject_offer(
+    message_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    offer_message = session.get(Message, message_id)
+    if not offer_message or offer_message.message_type != MessageType.OFFER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Offer not found.")
+    
+    conversation = session.get(Conversation, offer_message.conversation_id)
+    if not conversation or current_user.id != conversation.student_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to reject this offer.")
+    
+    if offer_message.offer_status != OfferStatus.PENDING:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Offer is not pending.")
+
+    offer_message.offer_status = OfferStatus.REJECTED
+    session.add(offer_message)
+
+    conversation.status = ConversationStatus.CLOSED
+    session.add(conversation)
+
+    blacklist_entry = RequestBlacklist(
+        request_id=conversation.request_id,
+        teacher_id=conversation.teacher_id
+    )
+    session.add(blacklist_entry)
+
+    session.commit()
+    
+    await manager.broadcast_to_conversation(json.dumps({"type": "CONVERSATION_CLOSED"}), conversation.id)
+
+    return {"status": "offer rejected"}
+
+@router.post("/conversations/{conversation_id}/leave")
+def leave_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+    
+    if current_user.id != conversation.student_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student can leave the conversation.")
+    
+    conversation.status = ConversationStatus.CLOSED
+    session.add(conversation)
+    session.commit()
+    
+    return {"status": "conversation left"}
+
 
 @router.post("/{conversation_id}/close", response_model=ConversationRead)
 def close_conversation(
