@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import client from '../api/client';
 import ProjectCard from '../components/ProjectCard';
 import { useToast } from '../context/ToastContext';
 
-const ProjectList = () => {
+const Archive = () => {
   const [projects, setProjects] = useState([]);
   const [availableFilters, setAvailableFilters] = useState({ languages: [] });
   const [loading, setLoading] = useState(true);
@@ -32,7 +32,7 @@ const ProjectList = () => {
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await client.get('/projects/', {
+      const response = await client.get('/projects/archive', {
         params: {
           search: searchParams.get('search'),
           language: searchParams.get('language'),
@@ -41,8 +41,8 @@ const ProjectList = () => {
       });
       setProjects(response.data);
     } catch (err) {
-      console.error("Failed to fetch projects", err);
-      setError("Could not load projects. Please try again later.");
+      console.error("Failed to fetch archived projects", err);
+      setError("Could not load the project archive. Please try again later.");
       addToast("Failed to load projects.", "error");
     } finally {
       setLoading(false);
@@ -56,7 +56,7 @@ const ProjectList = () => {
   const handleLanguageChange = (e) => {
     const newLanguage = e.target.value;
     setLanguage(newLanguage);
-    setLevel('');
+    setLevel(''); // Reset level when language changes
   };
 
   useEffect(() => {
@@ -74,9 +74,9 @@ const ProjectList = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl">Discover Projects</h1>
+        <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl">Project Archive</h1>
         <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-          Fund the next great piece of comprehensible input, or find a completed project to enjoy.
+          Browse all the successfully completed projects on the platform.
         </p>
       </div>
 
@@ -103,14 +103,8 @@ const ProjectList = () => {
       {loading ? (
         <div className="text-center py-10">Loading projects...</div>
       ) : projects.length === 0 ? (
-        <div className="text-center py-10 bg-white rounded-lg shadow">
-          <p className="text-gray-500 text-lg mb-4">No projects found matching your criteria.</p>
-          <Link
-            to="/requests"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none"
-          >
-            Request a video instead!
-          </Link>
+        <div className="text-center py-10">
+          <p className="text-gray-500">No completed projects found for the selected filters.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -123,4 +117,4 @@ const ProjectList = () => {
   );
 };
 
-export default ProjectList;
+export default Archive;

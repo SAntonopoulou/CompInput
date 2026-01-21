@@ -19,7 +19,8 @@ import Landing from './pages/Landing';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
-import TeacherReviews from './pages/TeacherReviews'; // Import the new component
+import TeacherReviews from './pages/TeacherReviews';
+import Archive from './pages/Archive'; // Import the new component
 
 function App() {
   const token = localStorage.getItem('token');
@@ -34,6 +35,7 @@ function App() {
               <Route path="/" element={token ? <ProjectList /> : <Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/archive" element={<Archive />} />
 
               {/* Protected Routes */}
               <Route element={<ProtectedRoute />}>

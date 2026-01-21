@@ -150,6 +150,23 @@ const ProjectDetail = () => {
           </div>
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
 
+          {videos.length > 0 && (
+            <div className="mt-8 border-t border-gray-200 pt-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Videos</h2>
+              <div className="space-y-8">
+                {videos.map(video => (
+                  <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                    <h3 className="text-lg font-medium text-gray-900">{video.title}</h3>
+                    <div className="relative bg-gray-100 rounded h-64 overflow-hidden group mt-2 mb-4">
+                      {getVideoThumbnail(video.url) ? (<img src={getVideoThumbnail(video.url)} alt={video.title} className="w-full h-full object-cover" />) : (<div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">Video Preview</div>)}
+                      <a href={video.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20 group-hover:bg-opacity-40 transition-all"><svg className="h-16 w-16 text-white opacity-90 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg></a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {project.is_backer && project.status === 'pending_confirmation' && (
             <div className="my-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
               <h4 className="font-bold">Action Required</h4>
@@ -230,23 +247,6 @@ const ProjectDetail = () => {
               </div>
             )}
           </div>
-
-          {videos.length > 0 && (
-            <div className="mt-8 border-t border-gray-200 pt-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Videos</h2>
-              <div className="space-y-8">
-                {videos.map(video => (
-                  <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900">{video.title}</h3>
-                    <div className="relative bg-gray-100 rounded h-64 overflow-hidden group mt-2 mb-4">
-                      {getVideoThumbnail(video.url) ? (<img src={getVideoThumbnail(video.url)} alt={video.title} className="w-full h-full object-cover" />) : (<div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">Video Preview</div>)}
-                      <a href={video.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20 group-hover:bg-opacity-40 transition-all"><svg className="h-16 w-16 text-white opacity-90 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg></a>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="mt-8 lg:mt-0">

@@ -1,6 +1,7 @@
 import stripe
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict
+from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
@@ -10,8 +11,8 @@ import os
 
 import logging
 from ..database import get_session
-from ..deps import get_current_user
-from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, Pledge, ProjectRating
+from ..deps import get_current_user, get_current_user_optional
+from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, Pledge, ProjectRating, Video
 from ..security import STRIPE_SECRET_KEY
 from pydantic import BaseModel
 
@@ -22,6 +23,7 @@ PLATFORM_FEE_PERCENT = float(os.getenv("PLATFORM_FEE_PERCENT", "0.15"))
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
+# Pydantic Models
 class ProjectCreate(BaseModel):
     title: str
     description: str
@@ -45,6 +47,10 @@ class ProjectUpdateModel(BaseModel):
 class MyRatingRead(BaseModel):
     rating: int
     comment: Optional[str]
+
+class VideoReadSimple(BaseModel):
+    id: int
+    url: str
 
 class ProjectRead(BaseModel):
     id: int
@@ -70,6 +76,7 @@ class ProjectRead(BaseModel):
     origin_request_id: Optional[int] = None
     is_backer: bool = False
     my_rating: Optional[MyRatingRead] = None
+    videos: List[VideoReadSimple] = []
 
     class Config:
         from_attributes = True
@@ -86,7 +93,15 @@ class UpdateRead(BaseModel):
     class Config:
         from_attributes = True
 
-def _create_project_read(p: Project, current_user: User, session: Session) -> ProjectRead:
+class LanguageLevelsRead(BaseModel):
+    language: str
+    levels: List[str]
+
+class FilterOptionsRead(BaseModel):
+    languages: List[LanguageLevelsRead]
+
+# Helper Functions
+def _create_project_read(p: Project, current_user: Optional[User], session: Session) -> ProjectRead:
     teacher_name = p.teacher.full_name if p.teacher else "Unknown"
     requester_name = p.request.user.full_name if (p.request and p.request.user) else None
     requester_id = p.request.user.id if (p.request and p.request.user) else None
@@ -126,8 +141,58 @@ def _create_project_read(p: Project, current_user: User, session: Session) -> Pr
         requester_avatar_url=requester_avatar_url,
         origin_request_id=p.origin_request_id,
         is_backer=is_backer,
-        my_rating=my_rating_obj
+        my_rating=my_rating_obj,
+        videos=[VideoReadSimple(id=v.id, url=v.url) for v in p.videos]
     )
+
+# API Endpoints
+@router.get("/filter-options", response_model=FilterOptionsRead)
+def get_filter_options(session: Session = Depends(get_session)):
+    query = select(Project.language, Project.level).where(Project.status == ProjectStatus.COMPLETED).distinct()
+    results = session.exec(query).all()
+    
+    language_levels = defaultdict(set)
+    for lang, level in results:
+        language_levels[lang].add(level)
+        
+    languages_list = [
+        LanguageLevelsRead(language=lang, levels=sorted(list(levels)))
+        for lang, levels in language_levels.items()
+    ]
+    
+    return FilterOptionsRead(languages=sorted(languages_list, key=lambda x: x.language))
+
+@router.get("/archive", response_model=List[ProjectRead])
+def list_archive_projects(
+    language: Optional[str] = None,
+    level: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 9,
+    offset: int = 0,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session)
+):
+    query = select(Project).join(User, Project.teacher_id == User.id).where(Project.status == ProjectStatus.COMPLETED).where(Project.is_private == False).options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
+    )
+
+    if language: query = query.where(Project.language == language)
+    if level: query = query.where(Project.level == level)
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(or_(
+            Project.title.ilike(search_term),
+            Project.description.ilike(search_term),
+            Project.tags.ilike(search_term),
+            Project.language.ilike(search_term),
+            Project.level.ilike(search_term),
+            User.full_name.ilike(search_term)
+        ))
+
+    projects = session.exec(query.offset(offset).limit(limit)).all()
+    return [_create_project_read(p, current_user, session) for p in projects]
 
 @router.post("/", response_model=Project)
 def create_project(
@@ -148,27 +213,35 @@ def create_project(
 def list_projects(
     language: Optional[str] = None,
     level: Optional[str] = None,
-    tag: Optional[str] = None,
     search: Optional[str] = None,
     limit: int = 9,
     offset: int = 0,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session)
 ):
-    query = select(Project).where(
+    query = select(Project).join(User, Project.teacher_id == User.id).where(
         (Project.status == ProjectStatus.FUNDING) | 
         (Project.status == ProjectStatus.SUCCESSFUL)
     ).where(
         (Project.is_private == False)
     ).options(
         selectinload(Project.teacher),
-        selectinload(Project.request).selectinload(Request.user)
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
     )
 
     if language: query = query.where(Project.language == language)
     if level: query = query.where(Project.level == level)
-    if tag: query = query.where(Project.tags.contains(tag))
-    if search: query = query.where(or_(Project.title.ilike(f"%{search}%"), Project.description.ilike(f"%{search}%")))
+    if search:
+        search_term = f"%{search}%"
+        query = query.where(or_(
+            Project.title.ilike(search_term),
+            Project.description.ilike(search_term),
+            Project.tags.ilike(search_term),
+            Project.language.ilike(search_term),
+            Project.level.ilike(search_term),
+            User.full_name.ilike(search_term)
+        ))
 
     projects = session.exec(query.offset(offset).limit(limit)).all()
     return [_create_project_read(p, current_user, session) for p in projects]
@@ -183,7 +256,8 @@ def list_my_projects(
     
     query = select(Project).where(Project.teacher_id == current_user.id).options(
         selectinload(Project.teacher),
-        selectinload(Project.request).selectinload(Request.user)
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
     )
     projects = session.exec(query).all()
     return [_create_project_read(p, current_user, session) for p in projects]
@@ -191,20 +265,20 @@ def list_my_projects(
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(
     project_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session)
 ):
     project = session.exec(
         select(Project)
         .where(Project.id == project_id)
-        .options(selectinload(Project.teacher), selectinload(Project.request).selectinload(Request.user))
+        .options(selectinload(Project.teacher), selectinload(Project.request).selectinload(Request.user), selectinload(Project.videos))
     ).first()
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    is_owner = project.teacher_id == current_user.id
-    is_admin = current_user.role == UserRole.ADMIN
+    is_owner = current_user and project.teacher_id == current_user.id
+    is_admin = current_user and current_user.role == UserRole.ADMIN
 
     if project.status in [ProjectStatus.DRAFT, ProjectStatus.ON_HOLD] and not (is_owner or is_admin):
         raise HTTPException(status_code=404, detail="Project not found")
@@ -217,7 +291,7 @@ def get_project(
 def get_related_projects(
     project_id: int,
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     project = session.get(Project, project_id)
     if not project:
@@ -230,7 +304,8 @@ def get_related_projects(
         Project.is_private == False
     ).options(
         selectinload(Project.teacher),
-        selectinload(Project.request).selectinload(Request.user)
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
     ).limit(3)
     
     projects = session.exec(query).all()

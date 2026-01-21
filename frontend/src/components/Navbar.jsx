@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import logo from '../assets/Logo - Rectangle.png';
-import Notifications from './Notifications'; // Import the new component
+import Notifications from './Notifications';
 
 const Navbar = () => {
   const navigate = useNavigate();
@@ -64,71 +64,42 @@ const Navbar = () => {
               </Link>
             </div>
             <div className="hidden sm:ml-6 sm:flex sm:space-x-8">
-              {user && (
+              {user ? (
                 <>
-                  <Link
-                    to="/"
-                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                  >
-                    Projects
-                  </Link>
-                  <Link
-                    to="/requests"
-                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                  >
-                    Requests
-                  </Link>
+                  <Link to="/projects" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Projects</Link>
+                  <Link to="/requests" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Requests</Link>
+                  <Link to="/archive" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Archive</Link>
+                  
+                  {user.role === 'teacher' && <Link to="/teacher/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Dashboard</Link>}
+                  {user.role === 'student' && <Link to="/student/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">My Pledges</Link>}
+                  {user.role === 'admin' && <Link to="/admin/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Admin</Link>}
                 </>
-              )}
-              {user?.role === 'teacher' && (
-                 <Link
-                    to="/teacher/dashboard"
-                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                    Dashboard
-                </Link>
-              )}
-              {user?.role === 'student' && (
-                 <Link
-                    to="/student/dashboard"
-                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                    My Pledges
-                </Link>
-              )}
-              {user?.role === 'admin' && (
-                 <Link
-                    to="/admin/dashboard"
-                    className="border-transparent text-kotoba-text hover:border-kotoba-accent hover:text-kotoba-primary inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium"
-                >
-                    Admin
-                </Link>
+              ) : (
+                <Link to="/archive" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Archive</Link>
               )}
             </div>
           </div>
 
           <div className="flex-1 flex items-center justify-center px-2 lg:ml-6 lg:justify-end">
-              {user && (
-                <form onSubmit={handleSearch} className="max-w-lg w-full lg:max-w-xs">
-                    <label htmlFor="search" className="sr-only">Search</label>
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <svg className="h-5 w-5 text-kotoba-text/70" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                                <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
-                            </svg>
-                        </div>
-                        <input
-                            id="search"
-                            name="search"
-                            className="block w-full pl-10 pr-3 py-2 border border-kotoba-text/40 rounded-md leading-5 bg-white placeholder-kotoba-text/60 focus:outline-none focus:placeholder-kotoba-text/80 focus:ring-1 focus:ring-kotoba-secondary focus:border-kotoba-secondary sm:text-sm"
-                            placeholder="Search projects"
-                            type="search"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
-                </form>
-              )}
+              <form onSubmit={handleSearch} className="max-w-lg w-full lg:max-w-xs">
+                  <label htmlFor="search" className="sr-only">Search</label>
+                  <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                              <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                          </svg>
+                      </div>
+                      <input
+                          id="search"
+                          name="search"
+                          className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          placeholder="Search projects"
+                          type="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                  </div>
+              </form>
           </div>
 
           <div className="hidden sm:ml-6 sm:flex sm:items-center">
@@ -137,19 +108,11 @@ const Navbar = () => {
                 <Notifications />
 
                 <div className="relative" ref={userMenuRef}>
-                    <button
-                        onClick={() => setShowUserMenu(!showUserMenu)}
-                        className="flex items-center text-sm font-medium text-kotoba-text hover:text-kotoba-primary focus:outline-none"
-                    >
+                    <button onClick={() => setShowUserMenu(!showUserMenu)} className="flex items-center text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none">
                         {user.avatar_url ? (
-                            <img 
-                                src={user.avatar_url} 
-                                alt={user.full_name} 
-                                className="h-8 w-8 rounded-full object-cover"
-                                onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${user.full_name}&background=random`; }}
-                            />
+                            <img src={user.avatar_url} alt={user.full_name} className="h-8 w-8 rounded-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${user.full_name}&background=random`; }} />
                         ) : (
-                            <div className="h-8 w-8 rounded-full bg-kotoba-primary/20 flex items-center justify-center text-kotoba-primary font-bold text-xs">
+                            <div className="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
                                 {user.full_name ? user.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
                             </div>
                         )}
@@ -157,44 +120,17 @@ const Navbar = () => {
 
                     {showUserMenu && (
                         <div className="origin-top-right absolute right-0 mt-2 w-48 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none">
-                            <Link
-                                to={`/profile/${user.id}`}
-                                className="block px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
-                                onClick={() => setShowUserMenu(false)}
-                            >
-                                Your Profile
-                            </Link>
-                            <Link
-                                to="/settings"
-                                className="block px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
-                                onClick={() => setShowUserMenu(false)}
-                            >
-                                Settings
-                            </Link>
-                            <button
-                                onClick={handleLogout}
-                                className="block w-full text-left px-4 py-2 text-sm text-kotoba-text hover:bg-kotoba-background"
-                            >
-                                Logout
-                            </button>
+                            <Link to={`/profile/${user.id}`} className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setShowUserMenu(false)}>Your Profile</Link>
+                            <Link to="/settings" className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100" onClick={() => setShowUserMenu(false)}>Settings</Link>
+                            <button onClick={handleLogout} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</button>
                         </div>
                     )}
                 </div>
               </div>
             ) : (
               <div className="flex space-x-4">
-                <Link
-                  to="/login"
-                  className="text-kotoba-text hover:text-kotoba-primary px-3 py-2 rounded-md text-sm font-medium"
-                >
-                  Login
-                </Link>
-                <Link
-                  to="/register"
-                  className="bg-kotoba-secondary text-kotoba-text hover:bg-kotoba-secondary-dark px-4 py-2 rounded-md text-sm font-medium"
-                >
-                  Register
-                </Link>
+                <Link to="/login" className="text-gray-500 hover:text-gray-700 px-3 py-2 rounded-md text-sm font-medium">Login</Link>
+                <Link to="/register" className="bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-md text-sm font-medium">Register</Link>
               </div>
             )}
           </div>

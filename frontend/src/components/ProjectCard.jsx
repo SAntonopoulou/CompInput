@@ -1,15 +1,20 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { getVideoThumbnail } from '../utils/video';
 
 const ProjectCard = ({ project }) => {
-  // Safely calculate percentage, preventing division by zero
   const percentage = project.funding_goal > 0 ? (project.current_funding / project.funding_goal) * 100 : 0;
+  const videoThumbnail = project.videos && project.videos.length > 0 ? getVideoThumbnail(project.videos[0].url) : null;
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col h-full">
       <Link to={`/projects/${project.id}`}>
-        <div className="h-48 bg-gray-200 flex items-center justify-center">
-          <span className="text-gray-500">Project Image</span>
+        <div className="h-48 bg-gray-200 flex items-center justify-center overflow-hidden">
+          {videoThumbnail ? (
+            <img src={videoThumbnail} alt={project.title} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-gray-500">Project Image</span>
+          )}
         </div>
       </Link>
       <div className="p-6 flex flex-col flex-grow">

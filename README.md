@@ -162,16 +162,11 @@ The application is currently **Feature Complete (MVP)**. All core logic for proj
 
 ### Future Enhancements & To-Do List
 
-#### New Features
-- [ ] **Enhanced Rating System:**
-  - Implement authorization to ensure only students who have funded a project can rate its videos.
-  - Aggregate video ratings to create an overall public rating for each teacher.
+#### To Do
 - [ ] **Teacher Verification:**
   - Create a system for teachers to upload certification documents.
   - Build an admin interface to review and approve/reject certifications.
   - Display a "Verified" badge on the profiles of approved teachers to help them stand out.
-- [ ] **Notification Management:**
-  - Add functionality for users to manually delete individual or all notifications, not just mark them as read.
 
 #### Infrastructure & Polish
 - [ ] **Email Integration:** Integrate an email service (e.g., SendGrid, Mailgun) for:
