@@ -70,6 +70,12 @@ const Inbox = () => {
       const response = await client.get(`/conversations/${conversationId}`);
       setCurrentConversation(response.data);
       setDemoVideoUrl(response.data.student_demo_video_url || '');
+      
+      // Manually clear unread count in the local state for instant UI update
+      setConversations(prev => prev.map(conv => 
+        conv.id === parseInt(conversationId) ? { ...conv, unread_messages_count: 0 } : conv
+      ));
+
       fetchUnreadCount(); // Update global unread count after marking messages as read
     } catch (error) {
       addToast('Failed to load conversation', 'error');
