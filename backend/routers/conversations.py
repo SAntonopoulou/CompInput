@@ -18,6 +18,7 @@ class ConversationCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     content: str
+    replied_to_message_id: Optional[int] = None
 
 class DemoVideoUpdate(BaseModel):
     url: str
@@ -33,13 +34,16 @@ class UserPublicRead(BaseModel):
 
 class MessageRead(BaseModel):
     id: int
-    conversation_id: int # Added field
+    conversation_id: int
     sender_id: int
     content: str
     created_at: datetime
     is_read: bool
-    sender_full_name: str # Added for frontend display
-    sender_avatar_url: Optional[str] = None # Added for frontend display
+    sender_full_name: str
+    sender_avatar_url: Optional[str] = None
+    replied_to_message_id: Optional[int] = None
+    replied_to_message_content: Optional[str] = None
+    replied_to_sender_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -54,10 +58,10 @@ class ConversationRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     
-    request_title: str # To be populated from Request
+    request_title: str
     teacher: UserPublicRead
     student: UserPublicRead
-    messages: List[MessageRead] = [] # Only for full conversation view
+    messages: List[MessageRead] = []
 
     class Config:
         from_attributes = True
@@ -117,23 +121,37 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
     # Ensure relationships are loaded
     if not conversation.request:
         conversation.request = session.get(Request, conversation.request_id)
-    if not conversation.teacher:
-        conversation.teacher = session.get(User, conversation.teacher_id)
-    if not conversation.student:
-        conversation.student = session.get(User, conversation.student_id)
 
+    # Explicitly fetch teacher and student to avoid relationship loading bugs
+    teacher = session.get(User, conversation.teacher_id)
+    student = session.get(User, conversation.student_id)
+    if not teacher or not student:
+        raise HTTPException(status_code=500, detail="Could not load conversation participants.")
     messages_read = []
     for msg in conversation.messages:
         sender_user = session.get(User, msg.sender_id)
+        replied_to_message_content = None
+        replied_to_sender_name = None
+        if msg.replied_to_message_id:
+            replied_to_message = session.get(Message, msg.replied_to_message_id)
+            if replied_to_message:
+                replied_to_message_content = replied_to_message.content
+                replied_to_sender = session.get(User, replied_to_message.sender_id)
+                if replied_to_sender:
+                    replied_to_sender_name = replied_to_sender.full_name
+
         messages_read.append(MessageRead(
             id=msg.id,
-            conversation_id=msg.conversation_id, # Added field
+            conversation_id=msg.conversation_id,
             sender_id=msg.sender_id,
             content=msg.content,
             created_at=msg.created_at,
             is_read=msg.is_read,
             sender_full_name=sender_user.full_name if sender_user else "Deleted User",
-            sender_avatar_url=sender_user.avatar_url if sender_user else None
+            sender_avatar_url=sender_user.avatar_url if sender_user else None,
+            replied_to_message_id=msg.replied_to_message_id,
+            replied_to_message_content=replied_to_message_content,
+            replied_to_sender_name=replied_to_sender_name
         ))
 
     return ConversationRead(
@@ -146,8 +164,8 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         request_title=conversation.request.title,
-        teacher=UserPublicRead.model_validate(conversation.teacher),
-        student=UserPublicRead.model_validate(conversation.student),
+        teacher=UserPublicRead.model_validate(teacher),
+        student=UserPublicRead.model_validate(student),
         messages=messages_read
     )
 
@@ -156,13 +174,13 @@ def _create_conversation_summary_read(conversation: Conversation, current_user: 
     # Ensure relationships are loaded
     if not conversation.request:
         conversation.request = session.get(Request, conversation.request_id)
-    if not conversation.teacher:
-        conversation.teacher = session.get(User, conversation.teacher_id)
-    if not conversation.student:
-        conversation.student = session.get(User, conversation.student_id)
 
-    other_participant = conversation.teacher if conversation.student_id == current_user.id else conversation.student
-    
+    # Explicitly determine and fetch the other participant to avoid relationship loading bugs
+    other_participant_id = conversation.teacher_id if current_user.id == conversation.student_id else conversation.student_id
+    other_participant = session.get(User, other_participant_id)
+    if not other_participant:
+        raise HTTPException(status_code=500, detail=f"Could not load other participant with ID {other_participant_id}.")
+
     last_message = session.exec(
         select(Message)
         .where(Message.conversation_id == conversation.id)
@@ -345,7 +363,8 @@ async def send_message(
         conversation_id=conversation.id,
         sender_id=current_user.id,
         content=message_in.content,
-        is_read=False
+        is_read=False,
+        replied_to_message_id=message_in.replied_to_message_id
     )
     session.add(message)
     conversation.updated_at = datetime.utcnow() # Update conversation timestamp
@@ -356,15 +375,28 @@ async def send_message(
 
     # Prepare message for broadcast and return
     sender_user = session.get(User, message.sender_id)
+    replied_to_message_content = None
+    replied_to_sender_name = None
+    if message.replied_to_message_id:
+        replied_to_message = session.get(Message, message.replied_to_message_id)
+        if replied_to_message:
+            replied_to_message_content = replied_to_message.content
+            replied_to_sender = session.get(User, replied_to_message.sender_id)
+            if replied_to_sender:
+                replied_to_sender_name = replied_to_sender.full_name
+
     message_read_instance = MessageRead(
         id=message.id,
-        conversation_id=message.conversation_id, # Added field
+        conversation_id=message.conversation_id,
         sender_id=message.sender_id,
         content=message.content,
         created_at=message.created_at,
         is_read=message.is_read,
         sender_full_name=sender_user.full_name if sender_user else "Deleted User",
-        sender_avatar_url=sender_user.avatar_url if sender_user else None
+        sender_avatar_url=sender_user.avatar_url if sender_user else None,
+        replied_to_message_id=message.replied_to_message_id,
+        replied_to_message_content=replied_to_message_content,
+        replied_to_sender_name=replied_to_sender_name
     )
 
     await manager.broadcast(message_read_instance.model_dump_json(), conversation_id)

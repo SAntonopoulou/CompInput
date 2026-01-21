@@ -243,6 +243,8 @@ class Message(SQLModel, table=True):
     content: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_read: bool = Field(default=False)
+    replied_to_message_id: Optional[int] = Field(default=None, foreign_key="message.id")
 
     conversation: Optional["Conversation"] = Relationship(back_populates="messages")
     sender: Optional["User"] = Relationship(back_populates="sent_messages")
+    replied_to_message: Optional["Message"] = Relationship(sa_relationship_kwargs={"remote_side": "Message.id"})

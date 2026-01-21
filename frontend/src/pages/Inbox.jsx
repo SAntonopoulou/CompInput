@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useInbox } from '../context/InboxContext';
-import { FaPaperPlane, FaVideo } from 'react-icons/fa';
+import { FaPaperPlane, FaVideo, FaReply, FaTimes } from 'react-icons/fa'; // Import FaReply and FaTimes
 
 const Inbox = () => {
   const { conversationId } = useParams();
@@ -20,6 +20,7 @@ const Inbox = () => {
   const [isSending, setIsSending] = useState(false);
   const [isLoadingConversations, setIsLoadingConversations] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const [replyingToMessage, setReplyingToMessage] = useState(null); // New state for reply feature
 
   const messagesEndRef = useRef(null);
   const ws = useRef(null);
@@ -51,13 +52,13 @@ const Inbox = () => {
     try {
       const response = await client.get('/conversations/');
       setConversations(response.data);
-      fetchUnreadCount(); // Update global unread count
+      // fetchUnreadCount(); // Only call when leaving the inbox or on initial load of other pages
     } catch (error) {
       addToast('Failed to load conversations', 'error');
     } finally {
       setIsLoadingConversations(false);
     }
-  }, [addToast, fetchUnreadCount, token]);
+  }, [addToast, token]);
 
   const fetchCurrentConversation = useCallback(async () => {
     if (!conversationId || !token) { // Don't fetch if no conversationId or token
@@ -88,7 +89,7 @@ const Inbox = () => {
 
   // WebSocket connection
   useEffect(() => {
-    if (!conversationId) {
+    if (!conversationId || !user) { // Ensure user is loaded before connecting
       return;
     }
 
@@ -100,14 +101,17 @@ const Inbox = () => {
     };
 
     ws.current.onmessage = (event) => {
-      const newMessage = JSON.parse(event.data);
+      const incomingMessage = JSON.parse(event.data);
       setCurrentConversation((prev) => {
-        if (prev && prev.id === newMessage.conversation_id) {
-          return { ...prev, messages: [...prev.messages, newMessage] };
+        if (prev && prev.id === incomingMessage.conversation_id) {
+          return { ...prev, messages: [...prev.messages, incomingMessage] };
         }
         return prev;
       });
-      fetchUnreadCount();
+      // Smart Notification: Only update unread count if the message is from another user AND not in the current conversation
+      if (incomingMessage.sender_id !== user.id && incomingMessage.conversation_id !== parseInt(conversationId)) {
+        fetchUnreadCount();
+      }
     };
 
     ws.current.onclose = () => {
@@ -123,13 +127,22 @@ const Inbox = () => {
         ws.current.close();
       }
     };
-  }, [conversationId, fetchUnreadCount]);
+  }, [conversationId, user, fetchUnreadCount]); // Added user to dependency array
 
+  // Scroll to bottom on new messages
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [currentConversation?.messages]);
+
+  // Cleanup: Update unread count when leaving the Inbox page
+  useEffect(() => {
+    return () => {
+      fetchUnreadCount();
+    };
+  }, [fetchUnreadCount]);
+
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
@@ -137,10 +150,13 @@ const Inbox = () => {
 
     setIsSending(true);
     try {
-      // The message is sent via HTTP and broadcasted via WebSocket by the backend
-      await client.post(`/conversations/${currentConversation.id}/messages`, { content: newMessage });
+      const payload = {
+        content: newMessage,
+        replied_to_message_id: replyingToMessage ? replyingToMessage.id : null,
+      };
+      await client.post(`/conversations/${currentConversation.id}/messages`, payload);
       setNewMessage('');
-      // No need to manually refresh, WebSocket will deliver the new message
+      setReplyingToMessage(null); // Clear reply state after sending
     } catch (error) {
       addToast('Failed to send message', 'error');
     } finally {
@@ -230,7 +246,7 @@ const Inbox = () => {
       </div>
 
       {/* Right Column: Chat Window */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-full"> {/* Added h-full here */}
         {currentConversation ? (
           <>
             <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
@@ -262,14 +278,31 @@ const Inbox = () => {
                     className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow ${
+                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${
                         message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'
                       }`}
                     >
+                      {message.replied_to_message_id && (
+                        <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}>
+                          <p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>
+                            {message.replied_to_sender_name || 'Deleted User'}
+                          </p>
+                          <p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>
+                            {message.replied_to_message_content}
+                          </p>
+                        </div>
+                      )}
                       <p className="text-sm">{message.content}</p>
                       <span className="block text-xs text-right opacity-75 mt-1">
                         {formatDateTime(message.created_at)}
                       </span>
+                      <button
+                        onClick={() => setReplyingToMessage(message)}
+                        className={`absolute -bottom-2 ${message.sender_id === user.id ? '-left-8' : '-right-8'} p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300`}
+                        title="Reply"
+                      >
+                        <FaReply size={12} />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -279,6 +312,17 @@ const Inbox = () => {
 
             {currentConversation.status === 'open' ? (
               <div className="bg-white p-4 border-t border-gray-200">
+                {replyingToMessage && (
+                  <div className="mb-2 p-2 rounded-md bg-gray-100 border-l-4 border-indigo-500 flex justify-between items-center">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-700">Replying to {replyingToMessage.sender_full_name}</p>
+                      <p className="text-sm text-gray-600 truncate">{replyingToMessage.content}</p>
+                    </div>
+                    <button onClick={() => setReplyingToMessage(null)} className="text-gray-500 hover:text-gray-700">
+                      <FaTimes />
+                    </button>
+                  </div>
+                )}
                 {user.id === currentConversation.student_id && (
                   <div className="mb-4">
                     <label htmlFor="demoVideo" className="block text-sm font-medium text-gray-700">
