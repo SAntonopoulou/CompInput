@@ -44,6 +44,9 @@ const Profile = () => {
         if (profileRes.data.role === 'teacher') {
             const projectsRes = await client.get(`/users/${id}/completed-projects`, { params: { limit: 2 } });
             setProjectData(projectsRes.data);
+        } else if (profileRes.data.role === 'student') {
+            const projectsRes = await client.get(`/users/${id}/backed-projects`, { params: { limit: 2 } });
+            setProjectData(projectsRes.data);
         }
 
       } catch (error) {
@@ -183,6 +186,26 @@ const Profile = () => {
                       ))}
                   </div>
               ) : (<p className="text-gray-500">This teacher has no completed projects yet.</p>)}
+          </div>
+      )}
+
+      {profile.role === 'student' && (
+          <div className="mt-8">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Backed Projects</h3>
+                {projectData.total_count > 2 && (
+                  <Link to={`/student/${id}/archive`} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+                    See all projects &rarr;
+                  </Link>
+                )}
+              </div>
+              {projectData.projects.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                      {projectData.projects.map(project => (
+                          <ProjectCard key={project.id} project={project} />
+                      ))}
+                  </div>
+              ) : (<p className="text-gray-500">This user has not backed any projects yet.</p>)}
           </div>
       )}
     </div>

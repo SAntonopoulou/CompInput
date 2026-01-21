@@ -10,7 +10,7 @@ from collections import defaultdict
 
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import User, UserRole, Project, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus
+from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus
 from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
@@ -144,6 +144,31 @@ def get_user_profile(
         sample_video_url=user.sample_video_url,
         avatar_url=user.avatar_url,
         verified_languages=verified_languages
+    )
+
+@router.get("/{user_id}/backed-projects", response_model=PaginatedProjectRead)
+def get_user_backed_projects(
+    user_id: int,
+    limit: int = 10,
+    offset: int = 0,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session)
+):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    base_query = select(Project).join(Pledge).where(Pledge.user_id == user_id)
+    
+    count_statement = select(func.count()).select_from(base_query.subquery())
+    total_count = session.exec(count_statement).one()
+
+    projects_statement = base_query.options(selectinload(Project.teacher), selectinload(Project.videos)).offset(offset).limit(limit)
+    projects = session.exec(projects_statement).all()
+    
+    return PaginatedProjectRead(
+        projects=[_create_project_read(p, current_user, session) for p in projects],
+        total_count=total_count
     )
 
 @router.get("/{user_id}/completed-projects", response_model=PaginatedProjectRead)

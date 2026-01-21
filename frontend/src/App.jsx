@@ -21,7 +21,8 @@ import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import TeacherReviews from './pages/TeacherReviews';
 import Archive from './pages/Archive';
-import TeacherArchive from './pages/TeacherArchive'; // Import the new component
+import TeacherArchive from './pages/TeacherArchive';
+import StudentArchive from './pages/student/Archive'; // Import the new component
 
 function App() {
   const token = localStorage.getItem('token');
@@ -50,6 +51,7 @@ function App() {
                 
                 {/* Student Routes */}
                 <Route path="/student/dashboard" element={<StudentDashboard />} />
+                <Route path="/student/:id/archive" element={<StudentArchive />} />
                 
                 {/* Teacher Routes */}
                 <Route element={<TeacherRoute />}>
