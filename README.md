@@ -3,7 +3,6 @@
 A web application that connects language learners with teachers. Learners can crowdfund specific "Comprehensible Input" video content, and teachers can get paid to create content that students actually want.
 
 ## Features
-
 ### 🎓 For Learners (Students)
 *   **Discover Content:** Browse proposed video projects by language and level (JLPT, CEFR). **Search** by title or description.
 *   **Request Board:** Can't find what you need? Post a request.
@@ -13,31 +12,38 @@ A web application that connects language learners with teachers. Learners can cr
     *   **Negotiation:** Accept or reject counter-offers from teachers.
 *   **Crowdfunding:** Pledge money securely via Stripe to fund projects.
 *   **Track Progress:** Dashboard to view backed projects, watch embedded videos with auto-generated thumbnails, and read project updates.
-*   **Rate & Review:** Rate videos to help others find quality teachers.
+*   **Confirm Completion:** Confirm a project is complete to approve the teacher's payout, ensuring accountability.
+*   **Rate & Review:** Rate completed projects to help others find quality teachers.
 *   **Profile:** Showcase your **Current Ability** with a demo video link and **Avatar**.
 
 ### 👨‍🏫 For Instructors (Teachers)
 *   **Create Campaigns:** Propose video series with funding goals and delivery timelines.
 *   **Get Paid:** Secure payouts via Stripe Connect once projects are completed.
-*   **Manage Workflow:** Dashboard to track funding, upload videos, and manage requests.
-*   **Build Reputation:** Public profile showing past work, average ratings, **Intro Video**, and **Teaching Samples**.
+*   **Manage Workflow:** Dashboard to track funding, upload videos, request completion from students, and manage requests.
+*   **Build Reputation:** Public profile showing past work, average ratings, **Intro Video**, **Teaching Samples**, and a dedicated page for all reviews.
+*   **Showcase Credentials:** Get verified for language certifications and display badges on your profile to stand out.
 *   **Find Work:** Browse student requests and offer to fulfill them.
-*   **Engage:** Post status updates to projects and reply to student comments on videos.
+*   **Engage:** Post and edit status updates to projects, and reply to student reviews.
 
 ### 💬 Community & Discovery
 *   **Interaction:** Comment sections on videos for Q&A.
 *   **Tags:** Filter projects by interests (e.g., Gaming, Grammar, Travel).
-*   **Updates:** Teachers can post text updates to keep backers informed during production.
+*   **Updates:** Teachers can post and edit text updates to keep backers informed during production.
+*   **Project Archive:** A public library of all successfully completed projects to discover teachers and content.
+*   **Teacher Reviews Page:** A dedicated page to view all of a teacher's ratings and comments.
 *   **Related Projects:** Smart suggestions for similar content on project pages.
 
 ### 🛡️ Admin
 *   **Dashboard:** View platform statistics (Users, Projects, Funds).
+*   **Teacher Verification:** Review and approve/reject teacher certification submissions.
 *   **Moderation:** Delete users or cancel projects if necessary.
 
 ### ⚙️ Platform Features
 *   **Secure Auth:** JWT authentication with Argon2 password hashing.
 *   **Notifications:** Real-time alerts for funding goals, new videos, and offers.
 *   **Safety:** Automated refunds if a project is cancelled.
+*   **Student-Approved Payouts:** A two-step payout process that requires student confirmation, building trust.
+*   **Enhanced Privacy:** Cancelled and draft projects are hidden from public view, only accessible to authorized users.
 *   **Responsive UI:** Built with React and Tailwind CSS for all devices.
 *   **UX Enhancements:** Toast notifications and confirmation modals for a smooth experience.
 *   **Account Safety:** "Soft delete" functionality to preserve project history even if a user leaves.
@@ -158,15 +164,9 @@ When registering a new user via the frontend:
 
 ## 🚀 Project Status & To Do
 
-The application is currently **Feature Complete (MVP)**. All core logic for project creation, funding, requests, payouts, and administration is implemented.
+The application is currently **Feature Rich**. All core logic for project creation, funding, requests, payouts, administration, and reputation management (ratings, reviews, verifications) is implemented.
 
 ### Future Enhancements & To-Do List
-
-#### To Do
-- [ ] **Teacher Verification:**
-  - Create a system for teachers to upload certification documents.
-  - Build an admin interface to review and approve/reject certifications.
-  - Display a "Verified" badge on the profiles of approved teachers to help them stand out.
 
 #### Infrastructure & Polish
 - [ ] **Email Integration:** Integrate an email service (e.g., SendGrid, Mailgun) for:
@@ -177,6 +177,7 @@ The application is currently **Feature Complete (MVP)**. All core logic for proj
   - User avatars.
   - Teacher intro/sample videos.
   - Secure hosting for delivered project videos, replacing the current URL-pasting system.
+  - Teacher certification documents.
 - [ ] **Deployment & Scalability:**
   - Create `Dockerfile` and `docker-compose.yml` for containerized deployment.
   - Set up a production-ready PostgreSQL database.
