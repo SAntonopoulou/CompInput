@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import client from '../api/client';
 import { FaShieldAlt } from 'react-icons/fa';
 import ProjectCard from '../components/ProjectCard';
+import VideoPlayer from '../components/VideoPlayer';
 
 const VerifiedLanguageBadge = ({ language }) => (
   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -106,13 +107,6 @@ const Profile = () => {
           {isOwner && <button onClick={() => setIsEditing(!isEditing)} className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">{isEditing ? 'Cancel' : 'Edit Profile'}</button>}
         </div>
 
-        {!isEditing && profile.intro_video_url && (
-            <div className="px-4 py-5 sm:px-6 border-t border-gray-200">
-                <h4 className="text-sm font-medium text-gray-500 mb-2">Introduction</h4>
-                <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64"><a href={profile.intro_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center"><svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>Watch Intro Video</a></div>
-            </div>
-        )}
-
         <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
           <dl className="sm:divide-y sm:divide-gray-200">
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
@@ -162,12 +156,21 @@ const Profile = () => {
         {isEditing && <div className="px-4 py-3 bg-gray-50 text-right sm:px-6"><button onClick={handleUpdate} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Save</button></div>}
       </div>
 
-      {!isEditing && profile.sample_video_url && (
-          <div className="mt-8 bg-white shadow overflow-hidden sm:rounded-lg p-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Teaching Sample</h3>
-              <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64"><a href={profile.sample_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center"><svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>Watch Sample Lesson</a></div>
-          </div>
-      )}
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+        {!isEditing && profile.intro_video_url && (
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Introduction</h3>
+                <VideoPlayer url={profile.intro_video_url} />
+            </div>
+        )}
+
+        {!isEditing && profile.sample_video_url && (
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4">Teaching Sample</h3>
+                <VideoPlayer url={profile.sample_video_url} />
+            </div>
+        )}
+      </div>
 
       {profile.role === 'teacher' && (
           <div className="mt-8">

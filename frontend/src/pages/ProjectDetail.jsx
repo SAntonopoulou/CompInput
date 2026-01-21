@@ -6,7 +6,7 @@ import RateProject from '../components/RateProject';
 import RespondToReview from '../components/RespondToReview';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
-import { getVideoThumbnail } from '../utils/video';
+import VideoPlayer from '../components/VideoPlayer';
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -162,11 +162,8 @@ const ProjectDetail = () => {
               <div className="space-y-8">
                 {videos.map(video => (
                   <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                    <h3 className="text-lg font-medium text-gray-900">{video.title}</h3>
-                    <div className="relative bg-gray-100 rounded h-64 overflow-hidden group mt-2 mb-4">
-                      {getVideoThumbnail(video.url) ? (<img src={getVideoThumbnail(video.url)} alt={video.title} className="w-full h-full object-cover" />) : (<div className="w-full h-full flex items-center justify-center bg-gray-200 text-gray-400">Video Preview</div>)}
-                      <a href={video.url} target="_blank" rel="noopener noreferrer" className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-20 group-hover:bg-opacity-40 transition-all"><svg className="h-16 w-16 text-white opacity-90 group-hover:scale-110 transition-transform" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg></a>
-                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">{video.title}</h3>
+                    <VideoPlayer url={video.url} />
                   </div>
                 ))}
               </div>
