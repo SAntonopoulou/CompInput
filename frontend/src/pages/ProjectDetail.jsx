@@ -21,6 +21,7 @@ const ProjectDetail = () => {
   const [videos, setVideos] = useState([]);
   const [updates, setUpdates] = useState([]);
   const [reviews, setReviews] = useState([]);
+  const [backers, setBackers] = useState([]);
   const [relatedProjects, setRelatedProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,8 +46,12 @@ const ProjectDetail = () => {
           } catch (e) { console.error("Failed to fetch user"); }
       }
 
-      const updatesRes = await client.get(`/projects/${id}/updates`);
+      const [updatesRes, backersRes] = await Promise.all([
+        client.get(`/projects/${id}/updates`),
+        client.get(`/projects/${id}/backers`)
+      ]);
       setUpdates(updatesRes.data);
+      setBackers(backersRes.data);
 
       if (['completed', 'successful'].includes(projectRes.data.status)) {
         const reviewsRes = await client.get(`/ratings/project/${id}`);
@@ -146,7 +151,8 @@ const ProjectDetail = () => {
             {tags.map((tag, index) => <span key={index} className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">{tag}</span>)}
           </div>
           <div className="mb-6 text-gray-500 text-sm">
-            {project.requester_name ? (<>Requested by <Link to={`/profile/${project.requester_id}`} className="text-indigo-600 hover:underline">{project.requester_name}</Link></>) : (<>By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline">{project.teacher_name}</Link></>)}
+            <p>By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline">{project.teacher_name}</Link></p>
+            {project.requester_name && <p className="mt-1">Requested by {project.requester_name}</p>}
           </div>
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
 
@@ -257,6 +263,20 @@ const ProjectDetail = () => {
               <p className="mt-2 text-sm text-gray-500 text-right">{Math.round(percentage)}% funded</p>
             </div>
             {project.status === 'funding' ? (token ? (<PledgeForm projectId={project.id} projectName={project.title} />) : (<div className="text-center"><p className="text-gray-600 mb-4">Log in to back this project.</p><Link to="/login" className="block w-full bg-indigo-600 text-white text-center py-2 px-4 rounded-md hover:bg-indigo-700">Login to Pledge</Link></div>)) : (<div className="bg-gray-100 p-4 rounded text-center text-gray-600">This project is {project.status.replace(/_/g, ' ')}.</div>)}
+            
+            {backers.length > 0 && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                <h4 className="text-sm font-medium text-gray-900 mb-3">Backers ({backers.length})</h4>
+                <div className="flex flex-wrap gap-2">
+                  {backers.map(backer => (
+                    <Link key={backer.id} to={`/profile/${backer.id}`} title={backer.full_name}>
+                      <img src={backer.avatar_url || `https://ui-avatars.com/api/?name=${backer.full_name}&background=random`} alt={backer.full_name} className="w-10 h-10 rounded-full object-cover" />
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Deadline: {new Date(project.deadline).toLocaleDateString()}</p></div>)}
             {project.delivery_days && !project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Delivery: {project.delivery_days} days after funding</p></div>)}
           </div>

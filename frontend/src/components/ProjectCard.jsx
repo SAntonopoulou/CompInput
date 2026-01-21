@@ -46,12 +46,16 @@ const ProjectCard = ({ project }) => {
 
         <div className="mt-auto pt-4 border-t border-gray-200">
           <div className="flex items-center">
-            <div className="w-10 h-10 bg-gray-300 rounded-full mr-3 overflow-hidden">
-              {project.teacher_avatar_url && <img src={project.teacher_avatar_url} alt={project.teacher_name} className="w-full h-full object-cover" />}
-            </div>
+            <Link to={`/profile/${project.teacher_id}`} className="w-10 h-10 bg-gray-300 rounded-full mr-3 overflow-hidden">
+              {project.teacher_avatar_url ? (
+                <img src={project.teacher_avatar_url} alt={project.teacher_name} className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full bg-gray-200"></div>
+              )}
+            </Link>
             <div className="flex-grow">
               <div className="flex items-center">
-                <p className="text-sm font-medium text-gray-900">{project.teacher_name}</p>
+                <Link to={`/profile/${project.teacher_id}`} className="text-sm font-medium text-gray-900 hover:text-indigo-600">{project.teacher_name}</Link>
                 {project.teacher_verified_languages && project.teacher_verified_languages.length > 0 && (
                   <div className="relative group ml-2">
                     <FaShieldAlt className="text-blue-500" />

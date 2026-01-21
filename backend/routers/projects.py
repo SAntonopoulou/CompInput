@@ -55,6 +55,11 @@ class UpdateRead(BaseModel):
     class Config:
         from_attributes = True
 
+class BackerRead(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: Optional[str] = None
+
 @router.get("/filter-options", response_model=FilterOptionsRead)
 def get_filter_options(session: Session = Depends(get_session)):
     query = select(Project.language, Project.level).where(Project.status == ProjectStatus.COMPLETED).distinct()
@@ -211,6 +216,12 @@ def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
             
     return _create_project_read(project, current_user, session)
+
+@router.get("/{project_id}/backers", response_model=List[BackerRead])
+def get_project_backers(project_id: int, session: Session = Depends(get_session)):
+    statement = select(User).join(Pledge).where(Pledge.project_id == project_id, Pledge.status == PledgeStatus.CAPTURED)
+    users = session.exec(statement).all()
+    return users
 
 @router.get("/{project_id}/related", response_model=List[ProjectRead])
 def get_related_projects(
