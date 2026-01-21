@@ -22,7 +22,7 @@ const Inbox = () => {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [replyingToMessage, setReplyingToMessage] = useState(null); // New state for reply feature
 
-  const messagesEndRef = useRef(null);
+  const messagesContainerRef = useRef(null); // Ref for the message container
   const ws = useRef(null);
 
   // Fetch current user details
@@ -141,8 +141,8 @@ const Inbox = () => {
 
   // Scroll to bottom on new messages
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
     }
   }, [currentConversation?.messages]);
 
@@ -206,190 +206,192 @@ const Inbox = () => {
   if (!user) return <div className="p-10 text-center">Loading user data...</div>;
 
   return (
-    <div className="flex h-[calc(100vh-64px)] bg-gray-100">
-      {/* Left Column: Conversation List */}
-      <div className="w-1/3 bg-white border-r border-gray-200 overflow-y-auto">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-800">Inbox</h2>
-        </div>
-        {isLoadingConversations ? (
-          <div className="p-4 text-gray-500">Loading conversations...</div>
-        ) : conversations.length === 0 ? (
-          <div className="p-4 text-gray-500">No conversations yet.</div>
-        ) : (
-          conversations.map((conv) => (
-            <div
-              key={conv.id}
-              onClick={() => navigate(`/messages/${conv.id}`)}
-              className={`flex items-center p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 ${conversationId == conv.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''}`}
-            >
-              <div className="flex-shrink-0 mr-3">
-                {conv.other_participant.avatar_url ? (
-                  <img className="h-10 w-10 rounded-full object-cover" src={conv.other_participant.avatar_url} alt={conv.other_participant.full_name} />
-                ) : (
-                  <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">
-                    {conv.other_participant.full_name ? conv.other_participant.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
+    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <div className="flex h-[calc(100vh-128px)] bg-white shadow-lg rounded-lg">
+        {/* Left Column: Conversation List */}
+        <div className="w-1/3 border-r border-gray-200 overflow-y-auto">
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-xl font-bold text-gray-800">Inbox</h2>
+          </div>
+          {isLoadingConversations ? (
+            <div className="p-4 text-gray-500">Loading conversations...</div>
+          ) : conversations.length === 0 ? (
+            <div className="p-4 text-gray-500">No conversations yet.</div>
+          ) : (
+            conversations.map((conv) => (
+              <div
+                key={conv.id}
+                onClick={() => navigate(`/messages/${conv.id}`)}
+                className={`flex items-center p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 ${conversationId == conv.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''}`}
+              >
+                <div className="flex-shrink-0 mr-3">
+                  {conv.other_participant.avatar_url ? (
+                    <img className="h-10 w-10 rounded-full object-cover" src={conv.other_participant.avatar_url} alt={conv.other_participant.full_name} />
+                  ) : (
+                    <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">
+                      {conv.other_participant.full_name ? conv.other_participant.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}
+                    </div>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-gray-900">
+                      {conv.other_participant.full_name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {formatDateTime(conv.updated_at)}
+                    </p>
                   </div>
-                )}
-              </div>
-              <div className="flex-1">
-                <div className="flex justify-between items-center">
-                  <p className="text-sm font-medium text-gray-900">
-                    {conv.other_participant.full_name}
+                  <p className="text-sm text-gray-600 truncate">
+                    {conv.request_title}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {formatDateTime(conv.updated_at)}
+                  {conv.unread_messages_count > 0 && (
+                    <span className="text-xs font-semibold text-indigo-600">
+                      {conv.unread_messages_count} unread
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Right Column: Chat Window */}
+        <div className="flex-1 flex flex-col">
+          {currentConversation ? (
+            <>
+              <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">{currentConversation.request_title}</h3>
+                  <p className="text-sm text-gray-600">
+                    {user.id === currentConversation.teacher_id ? `Student: ${currentConversation.student.full_name}` : `Teacher: ${currentConversation.teacher.full_name}`}
                   </p>
                 </div>
-                <p className="text-sm text-gray-600 truncate">
-                  {conv.request_title}
-                </p>
-                {conv.unread_messages_count > 0 && (
-                  <span className="text-xs font-semibold text-indigo-600">
-                    {conv.unread_messages_count} unread
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Right Column: Chat Window */}
-      <div className="flex-1 flex flex-col h-full"> {/* Added h-full here */}
-        {currentConversation ? (
-          <>
-            <div className="bg-white p-4 border-b border-gray-200 flex justify-between items-center">
-              <div>
-                <h3 className="text-lg font-bold text-gray-800">{currentConversation.request_title}</h3>
-                <p className="text-sm text-gray-600">
-                  {user.id === currentConversation.teacher_id ? `Student: ${currentConversation.student.full_name}` : `Teacher: ${currentConversation.teacher.full_name}`}
-                </p>
-              </div>
-              {currentConversation.status === 'open' && user.id === currentConversation.teacher_id && (
-                <button
-                  onClick={handleCloseConversation}
-                  className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium py-2 px-4 rounded-md"
-                >
-                  Close Conversation
-                </button>
-              )}
-            </div>
-
-            <div className="flex-1 p-4 overflow-y-auto bg-gray-50">
-              {isLoadingMessages ? (
-                <div className="text-center text-gray-500">Loading messages...</div>
-              ) : currentConversation.messages.length === 0 ? (
-                <div className="text-center text-gray-500">No messages yet.</div>
-              ) : (
-                currentConversation.messages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${
-                        message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'
-                      }`}
-                    >
-                      {message.replied_to_message_id && (
-                        <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}>
-                          <p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>
-                            {message.replied_to_sender_name || 'Deleted User'}
-                          </p>
-                          <p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>
-                            {message.replied_to_message_content}
-                          </p>
-                        </div>
-                      )}
-                      <p className="text-sm">{message.content}</p>
-                      <span className="block text-xs text-right opacity-75 mt-1">
-                        {formatDateTime(message.created_at)}
-                      </span>
-                      <button
-                        onClick={() => setReplyingToMessage(message)}
-                        className={`absolute -bottom-2 ${message.sender_id === user.id ? '-left-8' : '-right-8'} p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300`}
-                        title="Reply"
-                      >
-                        <FaReply size={12} />
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-              <div ref={messagesEndRef} />
-            </div>
-
-            {currentConversation.status === 'open' ? (
-              <div className="bg-white p-4 border-t border-gray-200">
-                {replyingToMessage && (
-                  <div className="mb-2 p-2 rounded-md bg-gray-100 border-l-4 border-indigo-500 flex justify-between items-center">
-                    <div>
-                      <p className="text-sm font-semibold text-gray-700">Replying to {replyingToMessage.sender_full_name}</p>
-                      <p className="text-sm text-gray-600 truncate">{replyingToMessage.content}</p>
-                    </div>
-                    <button onClick={() => setReplyingToMessage(null)} className="text-gray-500 hover:text-gray-700">
-                      <FaTimes />
-                    </button>
-                  </div>
-                )}
-                {user.id === currentConversation.student_id && (
-                  <div className="mb-4">
-                    <label htmlFor="demoVideo" className="block text-sm font-medium text-gray-700">
-                      Demo Video URL (for teacher)
-                    </label>
-                    <div className="mt-1 flex rounded-md shadow-sm">
-                      <input
-                        type="url"
-                        name="demoVideo"
-                        id="demoVideo"
-                        className="flex-1 block w-full rounded-none rounded-l-md border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                        placeholder="https://youtube.com/watch?v=..."
-                        value={demoVideoUrl}
-                        onChange={(e) => setDemoVideoUrl(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleUpdateDemoVideo}
-                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                      >
-                        <FaVideo className="mr-2" /> Update
-                      </button>
-                    </div>
-                    {currentConversation.student_demo_video_url && (
-                        <p className="mt-2 text-sm text-gray-500">Current: <a href={currentConversation.student_demo_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">{currentConversation.student_demo_video_url}</a></p>
-                    )}
-                  </div>
-                )}
-                <form onSubmit={handleSendMessage} className="flex items-center">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    placeholder="Type your message..."
-                    className="flex-1 border border-gray-300 rounded-l-md py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                    disabled={isSending}
-                  />
+                {currentConversation.status === 'open' && user.id === currentConversation.teacher_id && (
                   <button
-                    type="submit"
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-r-md flex items-center justify-center"
-                    disabled={isSending}
+                    onClick={handleCloseConversation}
+                    className="bg-red-500 hover:bg-red-600 text-white text-sm font-medium py-2 px-4 rounded-md"
                   >
-                    <FaPaperPlane className="mr-2" /> Send
+                    Close Conversation
                   </button>
-                </form>
+                )}
               </div>
-            ) : (
-              <div className="bg-white p-4 border-t border-gray-200 text-center text-gray-600">
-                This conversation is closed.
+
+              <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0">
+                {isLoadingMessages ? (
+                  <div className="text-center text-gray-500">Loading messages...</div>
+                ) : currentConversation.messages.length === 0 ? (
+                  <div className="text-center text-gray-500">No messages yet.</div>
+                ) : (
+                  currentConversation.messages.map((message) => (
+                    <div
+                      key={message.id}
+                      className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${
+                          message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'
+                        }`}
+                      >
+                        {message.replied_to_message_id && (
+                          <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}>
+                            <p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>
+                              {message.replied_to_sender_name || 'Deleted User'}
+                            </p>
+                            <p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>
+                              {message.replied_to_message_content}
+                            </p>
+                          </div>
+                        )}
+                        <p className="text-sm">{message.content}</p>
+                        <span className="block text-xs text-right opacity-75 mt-1">
+                          {formatDateTime(message.created_at)}
+                        </span>
+                        <button
+                          onClick={() => setReplyingToMessage(message)}
+                          className={`absolute -bottom-2 ${message.sender_id === user.id ? '-left-8' : '-right-8'} p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300`}
+                          title="Reply"
+                        >
+                          <FaReply size={12} />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+                {/* Removed the empty div with messagesEndRef */}
               </div>
-            )}
-          </>
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            Select a conversation to start chatting.
-          </div>
-        )}
+
+              {currentConversation.status === 'open' ? (
+                <div className="bg-white p-4 border-t border-gray-200">
+                  {replyingToMessage && (
+                    <div className="mb-2 p-2 rounded-md bg-gray-100 border-l-4 border-indigo-500 flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-semibold text-gray-700">Replying to {replyingToMessage.sender_full_name}</p>
+                        <p className="text-sm text-gray-600 truncate">{replyingToMessage.content}</p>
+                      </div>
+                      <button onClick={() => setReplyingToMessage(null)} className="text-gray-500 hover:text-gray-700">
+                        <FaTimes />
+                      </button>
+                    </div>
+                  )}
+                  {user.id === currentConversation.student_id && (
+                    <div className="mb-4">
+                      <label htmlFor="demoVideo" className="block text-sm font-medium text-gray-700">
+                        Demo Video URL (for teacher)
+                      </label>
+                      <div className="mt-1 flex rounded-md shadow-sm">
+                        <input
+                          type="url"
+                          name="demoVideo"
+                          id="demoVideo"
+                          className="flex-1 block w-full rounded-none rounded-l-md border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          placeholder="https://youtube.com/watch?v=..."
+                          value={demoVideoUrl}
+                          onChange={(e) => setDemoVideoUrl(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleUpdateDemoVideo}
+                          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                          <FaVideo className="mr-2" /> Update
+                        </button>
+                      </div>
+                      {currentConversation.student_demo_video_url && (
+                          <p className="mt-2 text-sm text-gray-500">Current: <a href={currentConversation.student_demo_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">{currentConversation.student_demo_video_url}</a></p>
+                      )}
+                    </div>
+                  )}
+                  <form onSubmit={handleSendMessage} className="flex items-center">
+                    <input
+                      type="text"
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      placeholder="Type your message..."
+                      className="flex-1 border border-gray-300 rounded-l-md py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      disabled={isSending}
+                    />
+                    <button
+                      type="submit"
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-r-md flex items-center justify-center"
+                      disabled={isSending}
+                    >
+                      <FaPaperPlane className="mr-2" /> Send
+                    </button>
+                  </form>
+                </div>
+              ) : (
+                <div className="bg-white p-4 border-t border-gray-200 text-center text-gray-600">
+                  This conversation is closed.
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center text-gray-500">
+              Select a conversation to start chatting.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
