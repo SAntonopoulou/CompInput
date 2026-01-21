@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import client from '../../api/client';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import { useToast } from '../../context/ToastContext';
@@ -7,38 +7,40 @@ const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
   const [users, setUsers] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [verifications, setVerifications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Modal State
   const [modalOpen, setModalOpen] = useState(false);
   const [modalConfig, setModalConfig] = useState({});
   
   const { addToast } = useToast();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const statsRes = await client.get('/admin/stats');
-        setStats(statsRes.data);
-        
-        const usersRes = await client.get('/admin/users');
-        setUsers(usersRes.data);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [statsRes, usersRes, projectsRes, verificationsRes] = await Promise.all([
+        client.get('/admin/stats'),
+        client.get('/admin/users'),
+        client.get('/projects/'),
+        client.get('/admin/verifications')
+      ]);
+      
+      setStats(statsRes.data);
+      setUsers(usersRes.data);
+      setProjects(projectsRes.data);
+      setVerifications(verificationsRes.data);
 
-        // Fetch all projects (using the public list endpoint for now, might need a dedicated admin list if we want to see drafts/cancelled)
-        // For admin purposes, let's just fetch public ones or add an admin param to list_projects later.
-        // Re-using public list for simplicity, but filtering client side if needed.
-        const projectsRes = await client.get('/projects/'); 
-        setProjects(projectsRes.data);
-
-      } catch (error) {
-        console.error("Failed to fetch admin data", error);
-        addToast("Failed to load admin dashboard", 'error');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+    } catch (error) {
+      console.error("Failed to fetch admin data", error);
+      addToast("Failed to load admin dashboard", 'error');
+    } finally {
+      setLoading(false);
+    }
   }, [addToast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const confirmDeleteUser = (userId) => {
     setModalConfig({
@@ -63,37 +65,28 @@ const AdminDashboard = () => {
       }
   };
 
-  const confirmCancelProject = (projectId) => {
-    setModalConfig({
-      title: "Cancel Project",
-      message: "Are you sure? This will refund all backers immediately.",
-      confirmText: "Cancel Project",
-      isDanger: true,
-      onConfirm: () => handleCancelProject(projectId)
-    });
-    setModalOpen(true);
+  const handleApprove = async (id) => {
+    try {
+      await client.post(`/admin/verifications/${id}/approve`);
+      addToast("Verification approved.", "success");
+      fetchData();
+    } catch (error) {
+      addToast("Failed to approve verification.", "error");
+    }
   };
 
-  const handleCancelProject = async (projectId) => {
-      setModalOpen(false);
-      try {
-          await client.delete(`/admin/projects/${projectId}`);
-          // Refresh projects list
-          const projectsRes = await client.get('/projects/');
-          setProjects(projectsRes.data);
-          addToast("Project cancelled successfully", 'success');
-      } catch (error) {
-          console.error("Failed to cancel project", error);
-          addToast("Failed to cancel project", 'error');
-      }
+  const handleReject = async (id) => {
+    const notes = prompt("Reason for rejection (optional):");
+    try {
+      await client.post(`/admin/verifications/${id}/reject`, { admin_notes: notes });
+      addToast("Verification rejected.", "success");
+      fetchData();
+    } catch (error) {
+      addToast("Failed to reject verification.", "error");
+    }
   };
 
-  const formatCurrency = (amountInCents) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amountInCents / 100);
-  };
+  const formatCurrency = (amountInCents) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amountInCents / 100);
 
   if (loading) return <div className="p-10 text-center">Loading admin dashboard...</div>;
 
@@ -101,91 +94,56 @@ const AdminDashboard = () => {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Admin Dashboard</h1>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <dt className="text-sm font-medium text-gray-500 truncate">Total Users</dt>
-            <dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.user_count}</dd>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <dt className="text-sm font-medium text-gray-500 truncate">Total Projects</dt>
-            <dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.project_count}</dd>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <dt className="text-sm font-medium text-gray-500 truncate">Total Pledges</dt>
-            <dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.pledge_count}</dd>
-          </div>
-        </div>
-        <div className="bg-white overflow-hidden shadow rounded-lg">
-          <div className="px-4 py-5 sm:p-6">
-            <dt className="text-sm font-medium text-gray-500 truncate">Funds Raised</dt>
-            <dd className="mt-1 text-3xl font-semibold text-green-600">{formatCurrency(stats?.total_funds_raised)}</dd>
+        <div className="bg-white overflow-hidden shadow rounded-lg"><div className="px-4 py-5 sm:p-6"><dt className="text-sm font-medium text-gray-500 truncate">Total Users</dt><dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.user_count}</dd></div></div>
+        <div className="bg-white overflow-hidden shadow rounded-lg"><div className="px-4 py-5 sm:p-6"><dt className="text-sm font-medium text-gray-500 truncate">Total Projects</dt><dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.project_count}</dd></div></div>
+        <div className="bg-white overflow-hidden shadow rounded-lg"><div className="px-4 py-5 sm:p-6"><dt className="text-sm font-medium text-gray-500 truncate">Total Pledges</dt><dd className="mt-1 text-3xl font-semibold text-gray-900">{stats?.pledge_count}</dd></div></div>
+        <div className="bg-white overflow-hidden shadow rounded-lg"><div className="px-4 py-5 sm:p-6"><dt className="text-sm font-medium text-gray-500 truncate">Funds Raised</dt><dd className="mt-1 text-3xl font-semibold text-green-600">{formatCurrency(stats?.total_funds_raised)}</dd></div></div>
+      </div>
+
+      <div className="mb-8">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Verification Requests</h2>
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+          <div className="max-h-96 overflow-y-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teacher</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {verifications.map((v) => (
+                  <tr key={v.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{v.teacher_name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{v.language}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href={v.document_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">View Document</a></td>
+                    <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${v.status === 'approved' ? 'bg-green-100 text-green-800' : v.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{v.status}</span></td>
+                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                      {v.status === 'pending' && (
+                        <div className="flex space-x-2">
+                          <button onClick={() => handleApprove(v.id)} className="text-green-600 hover:text-green-900">Approve</button>
+                          <button onClick={() => handleReject(v.id)} className="text-red-600 hover:text-red-900">Reject</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
 
-      {/* User Management */}
       <div className="mb-8">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Users</h2>
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <ul className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-            {users.map((user) => (
-              <li key={user.id} className="px-4 py-4 flex items-center justify-between hover:bg-gray-50">
-                <div>
-                  <p className="text-sm font-medium text-indigo-600 truncate">{user.full_name}</p>
-                  <p className="text-sm text-gray-500">{user.email} - <span className="capitalize">{user.role}</span></p>
-                </div>
-                {user.role !== 'admin' && (
-                    <button
-                    onClick={() => confirmDeleteUser(user.id)}
-                    className="text-red-600 hover:text-red-900 text-sm font-medium"
-                    >
-                    Delete
-                    </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <div className="bg-white shadow overflow-hidden sm:rounded-lg"><ul className="divide-y divide-gray-200 max-h-96 overflow-y-auto">{users.map((user) => (<li key={user.id} className="px-4 py-4 flex items-center justify-between hover:bg-gray-50"><div><p className="text-sm font-medium text-indigo-600 truncate">{user.full_name}</p><p className="text-sm text-gray-500">{user.email} - <span className="capitalize">{user.role}</span></p></div>{user.role !== 'admin' && (<button onClick={() => confirmDeleteUser(user.id)} className="text-red-600 hover:text-red-900 text-sm font-medium">Delete</button>)}</li>))}</ul></div>
       </div>
 
-      {/* Project Management */}
-      <div>
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Active Projects</h2>
-        <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <ul className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-            {projects.map((project) => (
-              <li key={project.id} className="px-4 py-4 flex items-center justify-between hover:bg-gray-50">
-                <div>
-                  <p className="text-sm font-medium text-indigo-600 truncate">{project.title}</p>
-                  <p className="text-sm text-gray-500">by {project.teacher_name} - {project.status}</p>
-                </div>
-                <button
-                  onClick={() => confirmCancelProject(project.id)}
-                  className="text-red-600 hover:text-red-900 text-sm font-medium"
-                >
-                  Cancel
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <ConfirmationModal 
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onConfirm={modalConfig.onConfirm}
-        title={modalConfig.title}
-        message={modalConfig.message}
-        confirmText={modalConfig.confirmText}
-        isDanger={modalConfig.isDanger}
-      />
+      <ConfirmationModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onConfirm={modalConfig.onConfirm} title={modalConfig.title} message={modalConfig.message} confirmText={modalConfig.confirmText} isDanger={modalConfig.isDanger} />
     </div>
   );
 };

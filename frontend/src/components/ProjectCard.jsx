@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { getVideoThumbnail } from '../utils/video';
+import { FaShieldAlt } from 'react-icons/fa';
 
 const ProjectCard = ({ project }) => {
   const percentage = project.funding_goal > 0 ? (project.current_funding / project.funding_goal) * 100 : 0;
@@ -48,8 +49,18 @@ const ProjectCard = ({ project }) => {
             <div className="w-10 h-10 bg-gray-300 rounded-full mr-3 overflow-hidden">
               {project.teacher_avatar_url && <img src={project.teacher_avatar_url} alt={project.teacher_name} className="w-full h-full object-cover" />}
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-900">{project.teacher_name}</p>
+            <div className="flex-grow">
+              <div className="flex items-center">
+                <p className="text-sm font-medium text-gray-900">{project.teacher_name}</p>
+                {project.teacher_verified_languages && project.teacher_verified_languages.length > 0 && (
+                  <div className="relative group ml-2">
+                    <FaShieldAlt className="text-blue-500" />
+                    <div className="absolute bottom-full mb-2 w-max bg-gray-800 text-white text-xs rounded py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      Verified in: {project.teacher_verified_languages.join(', ')}
+                    </div>
+                  </div>
+                )}
+              </div>
               <p className="text-sm text-gray-500">{project.language} - {project.level}</p>
             </div>
           </div>

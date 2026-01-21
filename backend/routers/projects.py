@@ -1,29 +1,28 @@
-import stripe
 from datetime import datetime
 from typing import List, Optional, Dict
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlmodel import Session, select
+from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
 import os
+import stripe
 
 import logging
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import Project, ProjectStatus, User, UserRole, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, Pledge, ProjectRating, Video
-from ..security import STRIPE_SECRET_KEY
+from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus
+from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-stripe.api_key = STRIPE_SECRET_KEY
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 PLATFORM_FEE_PERCENT = float(os.getenv("PLATFORM_FEE_PERCENT", "0.15"))
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
-# Pydantic Models
 class ProjectCreate(BaseModel):
     title: str
     description: str
@@ -44,43 +43,6 @@ class ProjectUpdateModel(BaseModel):
     status: Optional[ProjectStatus] = None
     tags: Optional[str] = None
 
-class MyRatingRead(BaseModel):
-    rating: int
-    comment: Optional[str]
-
-class VideoReadSimple(BaseModel):
-    id: int
-    url: str
-
-class ProjectRead(BaseModel):
-    id: int
-    title: str
-    description: str
-    language: str
-    level: str
-    funding_goal: int
-    current_funding: int
-    tags: Optional[str] = None
-    deadline: Optional[datetime]
-    delivery_days: Optional[int]
-    status: ProjectStatus
-    created_at: datetime
-    updated_at: datetime
-    teacher_id: int
-    teacher_name: str
-    stripe_transfer_id: Optional[str] = None
-    requester_name: Optional[str] = None
-    requester_id: Optional[int] = None
-    teacher_avatar_url: Optional[str] = None
-    requester_avatar_url: Optional[str] = None
-    origin_request_id: Optional[int] = None
-    is_backer: bool = False
-    my_rating: Optional[MyRatingRead] = None
-    videos: List[VideoReadSimple] = []
-
-    class Config:
-        from_attributes = True
-
 class UpdateCreate(BaseModel):
     content: str
 
@@ -93,59 +55,6 @@ class UpdateRead(BaseModel):
     class Config:
         from_attributes = True
 
-class LanguageLevelsRead(BaseModel):
-    language: str
-    levels: List[str]
-
-class FilterOptionsRead(BaseModel):
-    languages: List[LanguageLevelsRead]
-
-# Helper Functions
-def _create_project_read(p: Project, current_user: Optional[User], session: Session) -> ProjectRead:
-    teacher_name = p.teacher.full_name if p.teacher else "Unknown"
-    requester_name = p.request.user.full_name if (p.request and p.request.user) else None
-    requester_id = p.request.user.id if (p.request and p.request.user) else None
-    teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
-    requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
-    
-    is_backer = False
-    my_rating_obj = None
-    if current_user:
-        is_backer = session.exec(select(Pledge).where(Pledge.project_id == p.id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first() is not None
-        
-        if is_backer:
-            rating = session.exec(select(ProjectRating).where(ProjectRating.project_id == p.id, ProjectRating.user_id == current_user.id)).first()
-            if rating:
-                my_rating_obj = MyRatingRead(rating=rating.rating, comment=rating.comment)
-
-    return ProjectRead(
-        id=p.id,
-        title=p.title,
-        description=p.description,
-        language=p.language,
-        level=p.level,
-        funding_goal=p.funding_goal,
-        tags=p.tags,
-        current_funding=p.current_funding,
-        deadline=p.deadline,
-        delivery_days=p.delivery_days,
-        status=p.status,
-        created_at=p.created_at,
-        updated_at=p.updated_at,
-        teacher_id=p.teacher_id,
-        teacher_name=teacher_name,
-        stripe_transfer_id=p.stripe_transfer_id,
-        requester_name=requester_name,
-        requester_id=requester_id,
-        teacher_avatar_url=teacher_avatar_url,
-        requester_avatar_url=requester_avatar_url,
-        origin_request_id=p.origin_request_id,
-        is_backer=is_backer,
-        my_rating=my_rating_obj,
-        videos=[VideoReadSimple(id=v.id, url=v.url) for v in p.videos]
-    )
-
-# API Endpoints
 @router.get("/filter-options", response_model=FilterOptionsRead)
 def get_filter_options(session: Session = Depends(get_session)):
     query = select(Project.language, Project.level).where(Project.status == ProjectStatus.COMPLETED).distinct()
@@ -162,7 +71,7 @@ def get_filter_options(session: Session = Depends(get_session)):
     
     return FilterOptionsRead(languages=sorted(languages_list, key=lambda x: x.language))
 
-@router.get("/archive", response_model=List[ProjectRead])
+@router.get("/archive", response_model=PaginatedProjectRead)
 def list_archive_projects(
     language: Optional[str] = None,
     level: Optional[str] = None,
@@ -172,17 +81,13 @@ def list_archive_projects(
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session)
 ):
-    query = select(Project).join(User, Project.teacher_id == User.id).where(Project.status == ProjectStatus.COMPLETED).where(Project.is_private == False).options(
-        selectinload(Project.teacher),
-        selectinload(Project.request).selectinload(Request.user),
-        selectinload(Project.videos)
-    )
-
-    if language: query = query.where(Project.language == language)
-    if level: query = query.where(Project.level == level)
+    base_query = select(Project).join(User, Project.teacher_id == User.id).where(Project.status == ProjectStatus.COMPLETED).where(Project.is_private == False)
+    
+    if language: base_query = base_query.where(Project.language == language)
+    if level: base_query = base_query.where(Project.level == level)
     if search:
         search_term = f"%{search}%"
-        query = query.where(or_(
+        base_query = base_query.where(or_(
             Project.title.ilike(search_term),
             Project.description.ilike(search_term),
             Project.tags.ilike(search_term),
@@ -191,8 +96,20 @@ def list_archive_projects(
             User.full_name.ilike(search_term)
         ))
 
-    projects = session.exec(query.offset(offset).limit(limit)).all()
-    return [_create_project_read(p, current_user, session) for p in projects]
+    count_statement = select(func.count()).select_from(base_query.subquery())
+    total_count = session.exec(count_statement).one()
+
+    projects_statement = base_query.options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
+    ).offset(offset).limit(limit)
+    projects = session.exec(projects_statement).all()
+    
+    return PaginatedProjectRead(
+        projects=[_create_project_read(p, current_user, session) for p in projects],
+        total_count=total_count
+    )
 
 @router.post("/", response_model=Project)
 def create_project(
@@ -209,7 +126,7 @@ def create_project(
     session.refresh(project)
     return project
 
-@router.get("/", response_model=List[ProjectRead])
+@router.get("/", response_model=PaginatedProjectRead)
 def list_projects(
     language: Optional[str] = None,
     level: Optional[str] = None,
@@ -219,22 +136,18 @@ def list_projects(
     current_user: Optional[User] = Depends(get_current_user_optional),
     session: Session = Depends(get_session)
 ):
-    query = select(Project).join(User, Project.teacher_id == User.id).where(
+    base_query = select(Project).join(User, Project.teacher_id == User.id).where(
         (Project.status == ProjectStatus.FUNDING) | 
         (Project.status == ProjectStatus.SUCCESSFUL)
     ).where(
         (Project.is_private == False)
-    ).options(
-        selectinload(Project.teacher),
-        selectinload(Project.request).selectinload(Request.user),
-        selectinload(Project.videos)
     )
 
-    if language: query = query.where(Project.language == language)
-    if level: query = query.where(Project.level == level)
+    if language: base_query = base_query.where(Project.language == language)
+    if level: base_query = base_query.where(Project.level == level)
     if search:
         search_term = f"%{search}%"
-        query = query.where(or_(
+        base_query = base_query.where(or_(
             Project.title.ilike(search_term),
             Project.description.ilike(search_term),
             Project.tags.ilike(search_term),
@@ -243,8 +156,20 @@ def list_projects(
             User.full_name.ilike(search_term)
         ))
 
-    projects = session.exec(query.offset(offset).limit(limit)).all()
-    return [_create_project_read(p, current_user, session) for p in projects]
+    count_statement = select(func.count()).select_from(base_query.subquery())
+    total_count = session.exec(count_statement).one()
+
+    projects_statement = base_query.options(
+        selectinload(Project.teacher),
+        selectinload(Project.request).selectinload(Request.user),
+        selectinload(Project.videos)
+    ).offset(offset).limit(limit)
+    projects = session.exec(projects_statement).all()
+    
+    return PaginatedProjectRead(
+        projects=[_create_project_read(p, current_user, session) for p in projects],
+        total_count=total_count
+    )
 
 @router.get("/me", response_model=List[ProjectRead])
 def list_my_projects(

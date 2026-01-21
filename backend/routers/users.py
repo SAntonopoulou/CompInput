@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
+from collections import defaultdict
 
 from ..database import get_session
-from ..deps import get_current_user
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating
-from ..security import STRIPE_SECRET_KEY
+from ..deps import get_current_user, get_current_user_optional
+from ..models import User, UserRole, Project, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus
+from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
 
-stripe.api_key = STRIPE_SECRET_KEY
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -36,6 +37,7 @@ class UserProfile(BaseModel):
     intro_video_url: Optional[str] = None
     sample_video_url: Optional[str] = None
     avatar_url: Optional[str] = None
+    verified_languages: List[str] = []
 
     class Config:
         from_attributes = True
@@ -117,11 +119,18 @@ def get_user_profile(
         raise HTTPException(status_code=404, detail="User not found")
     
     average_rating = None
+    verified_languages = []
     if user.role == UserRole.TEACHER:
-        statement = select(func.avg(ProjectRating.rating)).join(Project).where(Project.teacher_id == user.id)
-        result = session.exec(statement).first()
-        if result:
-            average_rating = round(result, 1)
+        rating_statement = select(func.avg(ProjectRating.rating)).join(Project).where(Project.teacher_id == user.id)
+        avg_rating_result = session.exec(rating_statement).first()
+        if avg_rating_result:
+            average_rating = round(avg_rating_result, 1)
+        
+        verification_statement = select(TeacherVerification.language).where(
+            TeacherVerification.teacher_id == user.id,
+            TeacherVerification.status == VerificationStatus.APPROVED
+        )
+        verified_languages = session.exec(verification_statement).all()
 
     return UserProfile(
         id=user.id,
@@ -133,8 +142,70 @@ def get_user_profile(
         average_rating=average_rating,
         intro_video_url=user.intro_video_url,
         sample_video_url=user.sample_video_url,
-        avatar_url=user.avatar_url
+        avatar_url=user.avatar_url,
+        verified_languages=verified_languages
     )
+
+@router.get("/{user_id}/completed-projects", response_model=PaginatedProjectRead)
+def get_teacher_completed_projects(
+    user_id: int,
+    language: Optional[str] = None,
+    level: Optional[str] = None,
+    search: Optional[str] = None,
+    limit: int = 10,
+    offset: int = 0,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    session: Session = Depends(get_session)
+):
+    teacher = session.get(User, user_id)
+    if not teacher or teacher.role != UserRole.TEACHER:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    base_query = select(Project).where(Project.teacher_id == user_id, Project.status == ProjectStatus.COMPLETED)
+    
+    if language: base_query = base_query.where(Project.language == language)
+    if level: base_query = base_query.where(Project.level == level)
+    if search:
+        search_term = f"%{search}%"
+        base_query = base_query.where(or_(
+            Project.title.ilike(search_term),
+            Project.description.ilike(search_term),
+            Project.tags.ilike(search_term),
+        ))
+
+    count_statement = select(func.count()).select_from(base_query.subquery())
+    total_count = session.exec(count_statement).one()
+
+    projects_statement = base_query.options(selectinload(Project.teacher), selectinload(Project.videos)).offset(offset).limit(limit)
+    projects = session.exec(projects_statement).all()
+    
+    return PaginatedProjectRead(
+        projects=[_create_project_read(p, current_user, session) for p in projects],
+        total_count=total_count
+    )
+
+@router.get("/{user_id}/completed-projects/filter-options", response_model=FilterOptionsRead)
+def get_teacher_completed_projects_filter_options(user_id: int, session: Session = Depends(get_session)):
+    teacher = session.get(User, user_id)
+    if not teacher or teacher.role != UserRole.TEACHER:
+        raise HTTPException(status_code=404, detail="Teacher not found")
+
+    query = select(Project.language, Project.level).where(
+        Project.teacher_id == user_id,
+        Project.status == ProjectStatus.COMPLETED
+    ).distinct()
+    results = session.exec(query).all()
+    
+    language_levels = defaultdict(set)
+    for lang, level in results:
+        language_levels[lang].add(level)
+        
+    languages_list = [
+        LanguageLevelsRead(language=lang, levels=sorted(list(levels)))
+        for lang, levels in language_levels.items()
+    ]
+    
+    return FilterOptionsRead(languages=sorted(languages_list, key=lambda x: x.language))
 
 @router.get("/{user_id}/ratings", response_model=List[TeacherRatingRead])
 def get_teacher_ratings(

@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import client from '../api/client';
+import { FaShieldAlt } from 'react-icons/fa';
+import ProjectCard from '../components/ProjectCard';
+
+const VerifiedLanguageBadge = ({ language }) => (
+  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+    <FaShieldAlt className="mr-1.5" />
+    {language}
+  </span>
+);
 
 const Profile = () => {
   const { id } = useParams();
   const [profile, setProfile] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
-  const [history, setHistory] = useState([]);
+  const [projectData, setProjectData] = useState({ projects: [], total_count: 0 });
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ bio: '', languages: '', intro_video_url: '', sample_video_url: '', avatar_url: '' });
@@ -29,16 +38,12 @@ const Profile = () => {
             try {
                 const userRes = await client.get('/users/me');
                 setCurrentUser(userRes.data);
-            } catch (e) {
-                console.error("Failed to fetch current user");
-            }
+            } catch (e) { console.error("Failed to fetch current user"); }
         }
 
         if (profileRes.data.role === 'teacher') {
-            const videosRes = await client.get('/videos/', { params: { teacher_id: id } });
-            setHistory(videosRes.data);
-        } else {
-            setHistory([]);
+            const projectsRes = await client.get(`/users/${id}/completed-projects`, { params: { limit: 2 } });
+            setProjectData(projectsRes.data);
         }
 
       } catch (error) {
@@ -66,26 +71,23 @@ const Profile = () => {
 
   const isOwner = currentUser && currentUser.id === profile.id;
   const getInitials = (name) => name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??';
+  const hasVerifiedLanguages = profile.verified_languages && profile.verified_languages.length > 0;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div className="px-4 py-5 sm:px-6 flex justify-between items-center">
+        <div className="px-4 py-5 sm:px-6 flex justify-between items-start">
           <div className="flex items-center">
             {profile.avatar_url ? (
-                <img 
-                    src={profile.avatar_url} 
-                    alt={profile.full_name} 
-                    className="h-16 w-16 rounded-full object-cover mr-4"
-                    onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${profile.full_name}&background=random`; }}
-                />
+                <img src={profile.avatar_url} alt={profile.full_name} className="h-16 w-16 rounded-full object-cover mr-4" onError={(e) => { e.target.onerror = null; e.target.src = `https://ui-avatars.com/api/?name=${profile.full_name}&background=random`; }}/>
             ) : (
-                <div className="h-16 w-16 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl mr-4">
-                    {getInitials(profile.full_name)}
-                </div>
+                <div className="h-16 w-16 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xl mr-4">{getInitials(profile.full_name)}</div>
             )}
             <div>
-                <h3 className="text-lg leading-6 font-medium text-gray-900">{profile.full_name}</h3>
+                <div className="flex items-center gap-x-2">
+                    <h3 className="text-lg leading-6 font-medium text-gray-900">{profile.full_name}</h3>
+                    {hasVerifiedLanguages && <FaShieldAlt className="text-blue-500" title="This teacher has verified languages" />}
+                </div>
                 <p className="mt-1 max-w-2xl text-sm text-gray-500">
                     {profile.role.charAt(0).toUpperCase() + profile.role.slice(1)}
                     {profile.role === 'teacher' && profile.average_rating != null && (
@@ -104,9 +106,7 @@ const Profile = () => {
         {!isEditing && profile.intro_video_url && (
             <div className="px-4 py-5 sm:px-6 border-t border-gray-200">
                 <h4 className="text-sm font-medium text-gray-500 mb-2">Introduction</h4>
-                <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64">
-                    <a href={profile.intro_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center"><svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>Watch Intro Video</a>
-                </div>
+                <div className="aspect-w-16 aspect-h-9 bg-gray-100 rounded flex items-center justify-center h-64"><a href={profile.intro_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline flex items-center"><svg className="h-12 w-12 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" /></svg>Watch Intro Video</a></div>
             </div>
         )}
 
@@ -116,24 +116,38 @@ const Profile = () => {
               <dt className="text-sm font-medium text-gray-500">Bio</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{isEditing ? <textarea className="w-full border border-gray-300 rounded-md p-2" rows={3} value={editForm.bio} onChange={(e) => setEditForm({...editForm, bio: e.target.value})} /> : (profile.bio || "No bio provided.")}</dd>
             </div>
-            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-              <dt className="text-sm font-medium text-gray-500">Languages</dt>
-              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{isEditing ? <input type="text" className="w-full border border-gray-300 rounded-md p-2" value={editForm.languages} onChange={(e) => setEditForm({...editForm, languages: e.target.value})} placeholder="e.g. Japanese, Spanish" /> : (profile.languages || "None listed.")}</dd>
-            </div>
+            
+            {profile.role === 'teacher' && (
+              <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500">Languages</dt>
+                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                  {isEditing ? (
+                    <input type="text" className="w-full border border-gray-300 rounded-md p-2" value={editForm.languages} onChange={(e) => setEditForm({...editForm, languages: e.target.value})} placeholder="e.g. Japanese, Spanish" />
+                  ) : (
+                    <>
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500">Self-Reported</h4>
+                        <p>{profile.languages || "None listed."}</p>
+                      </div>
+                      {hasVerifiedLanguages && (
+                        <div className="mt-2">
+                          <h4 className="text-xs font-semibold text-gray-500">Verified</h4>
+                          <div className="flex flex-wrap gap-2 mt-1">
+                            {profile.verified_languages.map(lang => <VerifiedLanguageBadge key={lang} language={lang} />)}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </dd>
+              </div>
+            )}
+
             {isEditing && (
                 <>
-                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Avatar URL</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.avatar_url} onChange={(e) => setEditForm({...editForm, avatar_url: e.target.value})} placeholder="https://example.com/my-avatar.jpg" /></dd>
-                    </div>
-                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Intro Video URL</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.intro_video_url} onChange={(e) => setEditForm({...editForm, intro_video_url: e.target.value})} placeholder="https://youtube.com/..." /></dd>
-                    </div>
-                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
-                        <dt className="text-sm font-medium text-gray-500">Sample Video URL</dt>
-                        <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.sample_video_url} onChange={(e) => setEditForm({...editForm, sample_video_url: e.target.value})} placeholder="https://youtube.com/..." /></dd>
-                    </div>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6"><dt className="text-sm font-medium text-gray-500">Avatar URL</dt><dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.avatar_url} onChange={(e) => setEditForm({...editForm, avatar_url: e.target.value})} placeholder="https://example.com/my-avatar.jpg" /></dd></div>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6"><dt className="text-sm font-medium text-gray-500">Intro Video URL</dt><dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.intro_video_url} onChange={(e) => setEditForm({...editForm, intro_video_url: e.target.value})} placeholder="https://youtube.com/..." /></dd></div>
+                    <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6"><dt className="text-sm font-medium text-gray-500">Sample Video URL</dt><dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2"><input type="url" className="w-full border border-gray-300 rounded-md p-2" value={editForm.sample_video_url} onChange={(e) => setEditForm({...editForm, sample_video_url: e.target.value})} placeholder="https://youtube.com/..." /></dd></div>
                 </>
             )}
             <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
@@ -154,18 +168,21 @@ const Profile = () => {
 
       {profile.role === 'teacher' && (
           <div className="mt-8">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">Recent Videos</h3>
-              {history.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      {history.map(video => (
-                          <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                              <h4 className="font-bold text-gray-900">{video.title}</h4>
-                              <p className="text-sm text-gray-500">{video.project_title}</p>
-                              <a href={video.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 text-sm hover:underline mt-2 block">Watch Video</a>
-                          </div>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Completed Projects</h3>
+                {projectData.total_count > 2 && (
+                  <Link to={`/teacher/${id}/archive`} className="text-sm font-medium text-indigo-600 hover:text-indigo-800">
+                    See all projects &rarr;
+                  </Link>
+                )}
+              </div>
+              {projectData.projects.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                      {projectData.projects.map(project => (
+                          <ProjectCard key={project.id} project={project} />
                       ))}
                   </div>
-              ) : (<p className="text-gray-500">No videos found.</p>)}
+              ) : (<p className="text-gray-500">This teacher has no completed projects yet.</p>)}
           </div>
       )}
     </div>

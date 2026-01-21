@@ -30,6 +30,11 @@ class RequestStatus(str, Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
 
+class VerificationStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
 # Database Models
 
 class User(SQLModel, table=True):
@@ -58,6 +63,19 @@ class User(SQLModel, table=True):
     requests: List["Request"] = Relationship(back_populates="user", sa_relationship_kwargs={"foreign_keys": "Request.user_id"})
     project_ratings: List["ProjectRating"] = Relationship(back_populates="user")
     video_comments: List["VideoComment"] = Relationship(back_populates="user")
+    verifications: List["TeacherVerification"] = Relationship(back_populates="teacher")
+
+class TeacherVerification(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    language: str
+    document_url: str
+    status: VerificationStatus = Field(default=VerificationStatus.PENDING)
+    admin_notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    reviewed_at: Optional[datetime] = None
+    
+    teacher_id: int = Field(foreign_key="user.id")
+    teacher: "User" = Relationship(back_populates="verifications")
 
 class Project(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

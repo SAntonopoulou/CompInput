@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import client from '../api/client';
 import ProjectCard from '../components/ProjectCard';
 import { useToast } from '../context/ToastContext';
 
-const Archive = () => {
+const TeacherArchive = () => {
+  const { id } = useParams();
   const [projectData, setProjectData] = useState({ projects: [], total_count: 0 });
+  const [teacher, setTeacher] = useState(null);
   const [availableFilters, setAvailableFilters] = useState({ languages: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -18,46 +20,46 @@ const Archive = () => {
   const { addToast } = useToast();
 
   useEffect(() => {
-    const fetchFilterOptions = async () => {
+    const fetchInitialData = async () => {
       try {
-        const response = await client.get('/projects/filter-options');
-        setAvailableFilters(response.data);
+        const [teacherRes, filtersRes] = await Promise.all([
+          client.get(`/users/${id}/profile`),
+          client.get(`/users/${id}/completed-projects/filter-options`)
+        ]);
+        setTeacher(teacherRes.data);
+        setAvailableFilters(filtersRes.data);
       } catch (err) {
-        console.error("Failed to fetch filter options", err);
+        console.error("Failed to fetch initial data", err);
+        setError("Could not load teacher's archive. Please try again later.");
+        addToast("Failed to load page data.", "error");
       }
     };
-    fetchFilterOptions();
-  }, []);
+    fetchInitialData();
+  }, [id, addToast]);
 
   const fetchProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await client.get('/projects/archive', {
+      const response = await client.get(`/users/${id}/completed-projects`, {
         params: {
           search: searchParams.get('search'),
           language: searchParams.get('language'),
           level: searchParams.get('level'),
+          limit: 100, // Fetch all for this page
         },
       });
       setProjectData(response.data);
     } catch (err) {
-      console.error("Failed to fetch archived projects", err);
-      setError("Could not load the project archive. Please try again later.");
-      addToast("Failed to load projects.", "error");
+      console.error("Failed to fetch teacher's projects", err);
+      setError("Could not load projects. Please try again later.");
     } finally {
       setLoading(false);
     }
-  }, [searchParams, addToast]);
+  }, [id, searchParams]);
 
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
-
-  const handleLanguageChange = (e) => {
-    const newLanguage = e.target.value;
-    setLanguage(newLanguage);
-    setLevel('');
-  };
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -67,6 +69,11 @@ const Archive = () => {
     setSearchParams(params);
   }, [searchTerm, language, level, setSearchParams]);
 
+  const handleLanguageChange = (e) => {
+    setLanguage(e.target.value);
+    setLevel('');
+  };
+
   const currentLevels = availableFilters.languages.find(l => l.language === language)?.levels || [];
 
   if (error) return <div className="text-center py-10 text-red-600">{error}</div>;
@@ -74,9 +81,11 @@ const Archive = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl">Project Archive</h1>
+        <h1 className="text-4xl font-extrabold text-gray-900 sm:text-5xl">
+          {teacher ? `Project Archive for ${teacher.full_name}` : 'Project Archive'}
+        </h1>
         <p className="mt-4 max-w-2xl mx-auto text-xl text-gray-500">
-          Browse all the successfully completed projects on the platform.
+          Browse all completed projects from this teacher.
         </p>
       </div>
 
@@ -86,7 +95,7 @@ const Archive = () => {
             type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by keyword, tag, teacher..."
+            placeholder="Search projects..."
             className="p-2 border border-gray-300 rounded-md md:col-span-1 focus:ring-indigo-500 focus:border-indigo-500"
           />
           <select value={language} onChange={handleLanguageChange} className="p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500">
@@ -117,4 +126,4 @@ const Archive = () => {
   );
 };
 
-export default Archive;
+export default TeacherArchive;

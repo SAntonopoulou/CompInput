@@ -5,7 +5,7 @@ import ProjectCard from '../components/ProjectCard';
 import { useToast } from '../context/ToastContext';
 
 const ProjectList = () => {
-  const [projects, setProjects] = useState([]);
+  const [projectData, setProjectData] = useState({ projects: [], total_count: 0 });
   const [availableFilters, setAvailableFilters] = useState({ languages: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -39,7 +39,7 @@ const ProjectList = () => {
           level: searchParams.get('level'),
         },
       });
-      setProjects(response.data);
+      setProjectData(response.data);
     } catch (err) {
       console.error("Failed to fetch projects", err);
       setError("Could not load projects. Please try again later.");
@@ -102,7 +102,7 @@ const ProjectList = () => {
 
       {loading ? (
         <div className="text-center py-10">Loading projects...</div>
-      ) : projects.length === 0 ? (
+      ) : projectData.projects.length === 0 ? (
         <div className="text-center py-10 bg-white rounded-lg shadow">
           <p className="text-gray-500 text-lg mb-4">No projects found matching your criteria.</p>
           <Link
@@ -114,7 +114,7 @@ const ProjectList = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {projects.map((project) => (
+          {projectData.projects.map((project) => (
             <ProjectCard key={project.id} project={project} />
           ))}
         </div>
