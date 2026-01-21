@@ -22,6 +22,7 @@ const Inbox = () => {
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
   const messagesEndRef = useRef(null);
+  const ws = useRef(null);
 
   // Fetch current user details
   useEffect(() => {
@@ -85,6 +86,45 @@ const Inbox = () => {
     fetchCurrentConversation();
   }, [fetchCurrentConversation]);
 
+  // WebSocket connection
+  useEffect(() => {
+    if (!conversationId) {
+      return;
+    }
+
+    const wsUrl = `ws://${window.location.host.split(':')[0]}:8000/conversations/${conversationId}/ws`;
+    ws.current = new WebSocket(wsUrl);
+
+    ws.current.onopen = () => {
+      console.log("WebSocket connected");
+    };
+
+    ws.current.onmessage = (event) => {
+      const newMessage = JSON.parse(event.data);
+      setCurrentConversation((prev) => {
+        if (prev && prev.id === newMessage.conversation_id) {
+          return { ...prev, messages: [...prev.messages, newMessage] };
+        }
+        return prev;
+      });
+      fetchUnreadCount();
+    };
+
+    ws.current.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    ws.current.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    return () => {
+      if (ws.current) {
+        ws.current.close();
+      }
+    };
+  }, [conversationId, fetchUnreadCount]);
+
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
@@ -97,9 +137,10 @@ const Inbox = () => {
 
     setIsSending(true);
     try {
+      // The message is sent via HTTP and broadcasted via WebSocket by the backend
       await client.post(`/conversations/${currentConversation.id}/messages`, { content: newMessage });
       setNewMessage('');
-      fetchCurrentConversation(); // Refresh conversation to show new message
+      // No need to manually refresh, WebSocket will deliver the new message
     } catch (error) {
       addToast('Failed to send message', 'error');
     } finally {

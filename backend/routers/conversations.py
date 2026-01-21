@@ -1,9 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect
 from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
 from pydantic import BaseModel
+import json
 
 from ..database import get_session
 from ..deps import get_current_user
@@ -32,10 +33,13 @@ class UserPublicRead(BaseModel):
 
 class MessageRead(BaseModel):
     id: int
+    conversation_id: int # Added field
     sender_id: int
     content: str
     created_at: datetime
     is_read: bool
+    sender_full_name: str # Added for frontend display
+    sender_avatar_url: Optional[str] = None # Added for frontend display
 
     class Config:
         from_attributes = True
@@ -79,6 +83,35 @@ class InboxSummary(BaseModel):
     conversations: List[ConversationSummaryRead]
     total_unread_count: int
 
+
+# ConnectionManager for WebSockets
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[int, List[WebSocket]] = {}
+
+    async def connect(self, websocket: WebSocket, conversation_id: int):
+        await websocket.accept()
+        if conversation_id not in self.active_connections:
+            self.active_connections[conversation_id] = []
+        self.active_connections[conversation_id].append(websocket)
+
+    def disconnect(self, websocket: WebSocket, conversation_id: int):
+        if conversation_id in self.active_connections:
+            self.active_connections[conversation_id].remove(websocket)
+            if not self.active_connections[conversation_id]:
+                del self.active_connections[conversation_id]
+
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str, conversation_id: int):
+        if conversation_id in self.active_connections:
+            for connection in self.active_connections[conversation_id]:
+                await connection.send_text(message)
+
+manager = ConnectionManager()
+
+
 # Helper to create ConversationRead from Conversation model
 def _create_conversation_read(conversation: Conversation, current_user: User, session: Session) -> ConversationRead:
     # Ensure relationships are loaded
@@ -88,6 +121,20 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
         conversation.teacher = session.get(User, conversation.teacher_id)
     if not conversation.student:
         conversation.student = session.get(User, conversation.student_id)
+
+    messages_read = []
+    for msg in conversation.messages:
+        sender_user = session.get(User, msg.sender_id)
+        messages_read.append(MessageRead(
+            id=msg.id,
+            conversation_id=msg.conversation_id, # Added field
+            sender_id=msg.sender_id,
+            content=msg.content,
+            created_at=msg.created_at,
+            is_read=msg.is_read,
+            sender_full_name=sender_user.full_name if sender_user else "Deleted User",
+            sender_avatar_url=sender_user.avatar_url if sender_user else None
+        ))
 
     return ConversationRead(
         id=conversation.id,
@@ -101,7 +148,7 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
         request_title=conversation.request.title,
         teacher=UserPublicRead.model_validate(conversation.teacher),
         student=UserPublicRead.model_validate(conversation.student),
-        messages=[MessageRead.model_validate(msg) for msg in conversation.messages]
+        messages=messages_read
     )
 
 # Helper to create ConversationSummaryRead from Conversation model
@@ -278,7 +325,7 @@ def get_full_conversation(
     return _create_conversation_read(conversation, current_user, session)
 
 @router.post("/{conversation_id}/messages", response_model=MessageRead)
-def send_message(
+async def send_message(
     conversation_id: int,
     message_in: MessageCreate,
     current_user: User = Depends(get_current_user),
@@ -307,7 +354,22 @@ def send_message(
     session.refresh(message)
     session.refresh(conversation)
 
-    return MessageRead.model_validate(message)
+    # Prepare message for broadcast and return
+    sender_user = session.get(User, message.sender_id)
+    message_read_instance = MessageRead(
+        id=message.id,
+        conversation_id=message.conversation_id, # Added field
+        sender_id=message.sender_id,
+        content=message.content,
+        created_at=message.created_at,
+        is_read=message.is_read,
+        sender_full_name=sender_user.full_name if sender_user else "Deleted User",
+        sender_avatar_url=sender_user.avatar_url if sender_user else None
+    )
+
+    await manager.broadcast(message_read_instance.model_dump_json(), conversation_id)
+
+    return message_read_instance
 
 @router.post("/{conversation_id}/close", response_model=ConversationRead)
 def close_conversation(
@@ -354,3 +416,29 @@ def update_demo_video_url(
     session.refresh(conversation)
 
     return _create_conversation_read(conversation, current_user, session)
+
+@router.websocket("/{conversation_id}/ws")
+async def websocket_endpoint(websocket: WebSocket, conversation_id: int, session: Session = Depends(get_session)):
+    # Basic authentication for WebSocket
+    # In a real app, you'd validate a token passed in headers or query params
+    # For now, we'll allow connection but messages will be tied to sender_id from HTTP endpoint
+    
+    # Check if conversation exists
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Conversation not found")
+        return
+
+    await manager.connect(websocket, conversation_id)
+    try:
+        while True:
+            # We primarily use this for server-to-client, so we can just receive and ignore
+            # or log client messages if any.
+            data = await websocket.receive_text()
+            # print(f"Received message from client in conv {conversation_id}: {data}")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, conversation_id)
+        # print(f"Client disconnected from conversation {conversation_id}")
+    except Exception as e:
+        # print(f"WebSocket error in conversation {conversation_id}: {e}")
+        manager.disconnect(websocket, conversation_id)
