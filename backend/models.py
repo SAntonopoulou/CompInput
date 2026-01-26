@@ -147,6 +147,13 @@ class ProjectUpdate(SQLModel, table=True):
     project_id: int = Field(foreign_key="project.id")
     project: Optional[Project] = Relationship(back_populates="updates")
 
+class VideoResource(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str
+    url: str
+    video_id: int = Field(foreign_key="video.id")
+    video: "Video" = Relationship(back_populates="resources")
+
 class Video(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     title: str
@@ -160,6 +167,7 @@ class Video(SQLModel, table=True):
     project: Optional[Project] = Relationship(back_populates="videos")
     
     comments: List["VideoComment"] = Relationship(back_populates="video")
+    resources: List["VideoResource"] = Relationship(back_populates="video")
 
 class ProjectRating(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

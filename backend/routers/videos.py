@@ -8,9 +8,21 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Video, Project, ProjectStatus, User, Notification, Pledge, PledgeStatus, VideoComment, ProjectUpdate
+from ..models import Video, Project, ProjectStatus, User, Notification, Pledge, PledgeStatus, VideoComment, ProjectUpdate, VideoResource
 
 router = APIRouter(prefix="/videos", tags=["videos"])
+
+class VideoResourceCreate(BaseModel):
+    title: str
+    url: str
+
+class VideoResourceRead(BaseModel):
+    id: int
+    title: str
+    url: str
+
+    class Config:
+        from_attributes = True
 
 class VideoCreate(BaseModel):
     project_id: int
@@ -18,6 +30,7 @@ class VideoCreate(BaseModel):
     url: str
     platform: str = "youtube"
     duration: Optional[int] = None
+    resources: Optional[List[VideoResourceCreate]] = None
 
 class VideoRead(BaseModel):
     id: int
@@ -29,6 +42,7 @@ class VideoRead(BaseModel):
     project_id: int
     project_title: str
     teacher_name: str
+    resources: List[VideoResourceRead] = []
 
     class Config:
         from_attributes = True
@@ -55,7 +69,7 @@ def create_video(
     """
     Submit a video for a funded project.
     """
-    project = session.get(Project, video_in.project_id)
+    project = session.get(Project, video_in.project_id, options=[selectinload(Project.videos)])
 
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
@@ -72,6 +86,26 @@ def create_video(
             detail="Project must be SUCCESSFUL to submit videos",
         )
     
+    # Video count validation
+    if project.is_series:
+        if project.num_videos is None or project.num_videos <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="For a series project, the number of videos must be defined and greater than 0."
+            )
+        if len(project.videos) >= project.num_videos:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"This series project is limited to {project.num_videos} videos. You have already uploaded {len(project.videos)}."
+            )
+    else:
+        # For single video projects, only one video is allowed
+        if len(project.videos) > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This is a single video project. Only one video can be uploaded."
+            )
+
     video = Video(
         title=video_in.title,
         url=video_in.url,
@@ -80,7 +114,13 @@ def create_video(
         project_id=project.id
     )
     session.add(video)
-    
+    session.flush() # Flush to get the video ID
+
+    if video_in.resources:
+        for resource_in in video_in.resources:
+            resource = VideoResource(**resource_in.dict(), video_id=video.id)
+            session.add(resource)
+
     # Create a project update
     update_content = f"A new video has been posted: '{video.title}'"
     project_update = ProjectUpdate(
@@ -106,6 +146,26 @@ def create_video(
     session.refresh(video)
     return video
 
+@router.post("/{video_id}/resources", response_model=VideoResourceRead)
+def add_resource(
+    video_id: int,
+    resource_in: VideoResourceCreate,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    video = session.get(Video, video_id, options=[selectinload(Video.project)])
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    if video.project.teacher_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to add resources to this video")
+
+    resource = VideoResource(**resource_in.dict(), video_id=video_id)
+    session.add(resource)
+    session.commit()
+    session.refresh(resource)
+    return resource
+
 @router.get("/", response_model=List[VideoRead])
 def list_videos(
     limit: int = 10,
@@ -126,7 +186,10 @@ def list_videos(
     if teacher_id: query = query.where(Project.teacher_id == teacher_id)
     if project_id: query = query.where(Video.project_id == project_id)
         
-    query = query.options(selectinload(Video.project).selectinload(Project.teacher))
+    query = query.options(
+        selectinload(Video.project).selectinload(Project.teacher),
+        selectinload(Video.resources)
+    )
     
     videos = session.exec(query.offset(offset).limit(limit)).all()
     
@@ -144,7 +207,8 @@ def list_videos(
             created_at=v.created_at,
             project_id=v.project_id,
             project_title=project_title,
-            teacher_name=teacher_name
+            teacher_name=teacher_name,
+            resources=[VideoResourceRead.model_validate(res) for res in v.resources]
         ))
         
     return results

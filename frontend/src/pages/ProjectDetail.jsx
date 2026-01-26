@@ -8,9 +8,10 @@ import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import VideoPlayer from '../components/VideoPlayer';
 import VerifiedBadge from '../components/VerifiedBadge';
-import defaultProjectImage from '../assets/default_project_image.svg'; // Import the default image
-import { getVideoThumbnail } from '../utils/video'; // Ensure this is imported
-import LinkVideoModal from '../components/VideoUpload'; // Import LinkVideoModal
+import defaultProjectImage from '../assets/default_project_image.svg';
+import { getVideoThumbnail } from '../utils/video';
+import LinkVideoModal from '../components/LinkVideoModal';
+import AddResourceModal from '../components/AddResourceModal';
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -35,7 +36,9 @@ const ProjectDetail = () => {
   const [editingContent, setEditingContent] = useState('');
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState('');
-  const [showVideoModal, setShowVideoModal] = useState(false); // New state for video modal
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [showResourceModal, setShowResourceModal] = useState(false);
+  const [selectedVideoId, setSelectedVideoId] = useState(null);
   
   const { addToast } = useToast();
   const token = localStorage.getItem('token');
@@ -142,7 +145,7 @@ const ProjectDetail = () => {
       await client.patch(`/projects/${id}`, { project_image_url: newImageUrl });
       addToast("Project image updated successfully!", "success");
       setIsEditingImage(false);
-      fetchData(); // Re-fetch project data to display the new image
+      fetchData();
     } catch (error) {
       console.error("Failed to update project image", error);
       addToast(error.response?.data?.detail || "Failed to update image.", "error");
@@ -152,7 +155,13 @@ const ProjectDetail = () => {
   const handleVideoLinkSuccess = () => {
     setShowVideoModal(false);
     addToast("Video linked successfully!", 'success');
-    fetchData(); // Refresh project data to show new video and update
+    fetchData();
+  };
+
+  const handleAddResourceSuccess = () => {
+    setShowResourceModal(false);
+    addToast("Resource added successfully!", "success");
+    fetchData();
   };
 
   if (loading) return <div className="text-center py-10">Loading...</div>;
@@ -176,47 +185,27 @@ const ProjectDetail = () => {
   let headerImageUrl = defaultProjectImage;
   if (project.project_image_url) {
     headerImageUrl = project.project_image_url;
-  } else if (!project.is_series && project.videos && project.videos.length > 0) {
-    headerImageUrl = getVideoThumbnail(project.videos[0]);
+  } else if (!project.is_series && videos.length > 0) {
+    headerImageUrl = getVideoThumbnail(videos[0].url);
   }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="lg:grid lg:grid-cols-3 lg:gap-8">
         <div className="lg:col-span-2">
-          {/* Project Image Header */}
           <div className="relative mb-8 rounded-lg overflow-hidden shadow-lg group">
             <img src={headerImageUrl} alt={project.title} className="w-full h-64 object-cover" />
             {isOwner && !isEditingImage && (
-              <button
-                onClick={() => {
-                  setIsEditingImage(true);
-                  setNewImageUrl(project.project_image_url || '');
-                }}
-                className="absolute top-3 right-3 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                title="Edit Project Image"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
-                  <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
-                </svg>
+              <button onClick={() => { setIsEditingImage(true); setNewImageUrl(project.project_image_url || ''); }} className="absolute top-3 right-3 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" title="Edit Project Image">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
               </button>
             )}
           </div>
 
           {isOwner && isEditingImage && (
             <div className="mb-6 p-4 border rounded-lg bg-gray-50 shadow-sm">
-              <label htmlFor="project_image_url" className="block text-sm font-medium text-gray-700">
-                Project Image URL
-              </label>
-              <input
-                type="url"
-                id="project_image_url"
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                placeholder="https://example.com/your-image.png"
-              />
+              <label htmlFor="project_image_url" className="block text-sm font-medium text-gray-700">Project Image URL</label>
+              <input type="url" id="project_image_url" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={newImageUrl} onChange={(e) => setNewImageUrl(e.target.value)} placeholder="https://example.com/your-image.png" />
               <div className="mt-3 flex justify-end space-x-3">
                 <button onClick={() => setIsEditingImage(false)} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
                 <button onClick={handleUpdateImage} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Save Image</button>
@@ -231,27 +220,42 @@ const ProjectDetail = () => {
             {tags.map((tag, index) => <span key={index} className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">{tag}</span>)}
           </div>
           <div className="mb-6 text-gray-500 text-sm">
-            <p className="flex items-center">
-              By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline ml-1">{project.teacher_name}</Link>
-              <VerifiedBadge languages={project.teacher_verified_languages} />
-            </p>
+            <p className="flex items-center">By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline ml-1">{project.teacher_name}</Link><VerifiedBadge languages={project.teacher_verified_languages} /></p>
             {project.requester_name && <p className="mt-1">Requested by {project.requester_name}</p>}
           </div>
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
 
-          {videos.length > 0 && (
-            <div className="mt-8 border-t border-gray-200 pt-8">
-              <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Videos</h2>
+          <div className="mt-8 border-t border-gray-200 pt-8">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-2xl font-bold text-gray-900">Project Videos</h2>
+              {isOwner && project.status === 'successful' && canLinkVideo && (<button onClick={() => setShowVideoModal(true)} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">Link Video</button>)}
+            </div>
+            {videos.length > 0 ? (
               <div className="space-y-8">
                 {videos.map(video => (
                   <div key={video.id} className="bg-white p-4 rounded-lg shadow border border-gray-200">
                     <h3 className="text-lg font-medium text-gray-900 mb-4">{video.title}</h3>
                     <VideoPlayer url={video.url} />
+                    {video.resources && video.resources.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <h4 className="text-sm font-medium text-gray-800 mb-2">Resources:</h4>
+                        <ul className="space-y-1">
+                          {video.resources.map(res => (
+                            <li key={res.id}><a href={res.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">{res.title}</a></li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {isOwner && (
+                      <div className="mt-4 text-right">
+                        <button onClick={() => { setSelectedVideoId(video.id); setShowResourceModal(true); }} className="text-sm text-indigo-600 hover:underline">Add Resource</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : <p className="text-gray-500">No videos have been added yet.</p>}
+          </div>
 
           {project.is_backed_by_user && project.status === 'pending_confirmation' && (
             <div className="my-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
@@ -261,23 +265,11 @@ const ProjectDetail = () => {
             </div>
           )}
 
-          {canRate ? (
+          {canRate && (
             <div ref={ratingSectionRef} className="mt-8 border-t border-gray-200 pt-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Your Rating</h2>
-              <RateProject 
-                projectId={project.id} 
-                onRatingSuccess={handleRatingSuccess}
-                initialRating={project.my_rating?.rating}
-                initialComment={project.my_rating?.comment}
-              />
+              <RateProject projectId={project.id} onRatingSuccess={handleRatingSuccess} initialRating={project.my_rating?.rating} initialComment={project.my_rating?.comment} />
             </div>
-          ) : (
-            project.is_backed_by_user && project.status !== 'completed' && (
-              <div className="mt-8 border-t border-gray-200 pt-8 p-4 bg-blue-50 border-l-4 border-blue-200 text-blue-700">
-                <p className="font-bold">Rating Unavailable</p>
-                <p className="text-sm">You can rate this project once its status is 'completed'. Current status: {project.status.replace(/_/g, ' ')}.</p>
-              </div>
-            )
           )}
 
           {reviews.length > 0 && (
@@ -294,18 +286,8 @@ const ProjectDetail = () => {
                       <span className="text-sm text-gray-500">{new Date(review.created_at).toLocaleDateString()}</span>
                     </div>
                     {review.comment && <p className="mt-3 text-gray-700 italic">"{review.comment}"</p>}
-                    
-                    {review.teacher_response && (
-                      <div className="mt-4 pt-4 border-t border-gray-200">
-                        <p className="text-sm font-semibold text-gray-800">Response from {project.teacher_name}:</p>
-                        <p className="text-sm text-gray-600 italic">"{review.teacher_response}"</p>
-                        <p className="text-xs text-gray-400 text-right">{new Date(review.response_created_at).toLocaleDateString()}</p>
-                      </div>
-                    )}
-
-                    {isOwner && !review.teacher_response && (
-                      <RespondToReview ratingId={review.id} onResponseSuccess={fetchData} />
-                    )}
+                    {review.teacher_response && (<div className="mt-4 pt-4 border-t border-gray-200"><p className="text-sm font-semibold text-gray-800">Response from {project.teacher_name}:</p><p className="text-sm text-gray-600 italic">"{review.teacher_response}"</p><p className="text-xs text-gray-400 text-right">{new Date(review.response_created_at).toLocaleDateString()}</p></div>)}
+                    {isOwner && !review.teacher_response && (<RespondToReview ratingId={review.id} onResponseSuccess={fetchData} />)}
                   </div>
                 ))}
               </div>
@@ -315,30 +297,16 @@ const ProjectDetail = () => {
           <div className="mt-8 border-t border-gray-200 pt-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Updates</h2>
             {isOwner && (
-              <div className="mb-6 flex justify-between items-center">
-                <textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} placeholder="Post an update for your backers..." value={newUpdate} onChange={(e) => setNewUpdate(e.target.value)} />
-                <div className="ml-4 flex flex-col space-y-2">
-                  <button onClick={handlePostUpdate} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Post Update</button>
-                  {isOwner && project.status === 'successful' && canLinkVideo && (
-                    <button onClick={() => setShowVideoModal(true)} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">Link Video</button>
-                  )}
-                </div>
-              </div>
+              <div className="mb-6"><textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} placeholder="Post an update for your backers..." value={newUpdate} onChange={(e) => setNewUpdate(e.target.value)} /><div className="mt-2 text-right"><button onClick={handlePostUpdate} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Post Update</button></div></div>
             )}
             {updates.length === 0 ? (<p className="text-gray-500 text-sm">No updates yet.</p>) : (
               <div className="space-y-4">
                 {updates.map(update => (
                   <div key={update.id} className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                     {editingUpdateId === update.id ? (
-                      <div>
-                        <textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} />
-                        <div className="mt-2 text-right space-x-2"><button onClick={handleCancelEdit} className="text-sm text-gray-600">Cancel</button><button onClick={() => handleSaveUpdate(update.id)} className="text-sm text-indigo-600 font-medium">Save</button></div>
-                      </div>
+                      <div><textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} value={editingContent} onChange={(e) => setEditingContent(e.target.value)} /><div className="mt-2 text-right space-x-2"><button onClick={handleCancelEdit} className="text-sm text-gray-600">Cancel</button><button onClick={() => handleSaveUpdate(update.id)} className="text-sm text-indigo-600 font-medium">Save</button></div></div>
                     ) : (
-                      <>
-                        <p className="text-gray-800 whitespace-pre-line">{update.content}</p>
-                        <div className="flex justify-between items-center mt-2"><p className="text-xs text-gray-500">{new Date(update.created_at).toLocaleDateString()}</p>{isOwner && (<button onClick={() => handleEditUpdate(update)} className="text-xs text-indigo-600 hover:underline">Edit</button>)}</div>
-                      </>
+                      <><p className="text-gray-800 whitespace-pre-line">{update.content}</p><div className="flex justify-between items-center mt-2"><p className="text-xs text-gray-500">{new Date(update.created_at).toLocaleDateString()}</p>{isOwner && (<button onClick={() => handleEditUpdate(update)} className="text-xs text-indigo-600 hover:underline">Edit</button>)}</div></>
                     )}
                   </div>
                 ))}
@@ -355,42 +323,16 @@ const ProjectDetail = () => {
               <p className="mt-2 text-sm text-gray-500 text-right">{Math.round(percentage)}% funded</p>
             </div>
             {project.status === 'funding' ? (token ? (<PledgeForm projectId={project.id} projectName={project.title} />) : (<div className="text-center"><p className="text-gray-600 mb-4">Log in to back this project.</p><Link to="/login" className="block w-full bg-indigo-600 text-white text-center py-2 px-4 rounded-md hover:bg-indigo-700">Login to Pledge</Link></div>)) : (<div className="bg-gray-100 p-4 rounded text-center text-gray-600">This project is {project.status.replace(/_/g, ' ')}.</div>)}
-            
-            {backers.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-gray-200">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">Backers ({backers.length})</h4>
-                <div className="flex flex-wrap gap-2">
-                  {backers.map(backer => (
-                    <Link key={backer.id} to={`/profile/${backer.id}`} title={backer.full_name}>
-                      <img src={backer.avatar_url || `https://ui-avatars.com/api/?name=${backer.full_name}&background=random`} alt={backer.full_name} className="w-10 h-10 rounded-full object-cover" />
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-
+            {backers.length > 0 && (<div className="mt-6 pt-6 border-t border-gray-200"><h4 className="text-sm font-medium text-gray-900 mb-3">Backers ({backers.length})</h4><div className="flex flex-wrap gap-2">{backers.map(backer => (<Link key={backer.id} to={`/profile/${backer.id}`} title={backer.full_name}><img src={backer.avatar_url || `https://ui-avatars.com/api/?name=${backer.full_name}&background=random`} alt={backer.full_name} className="w-10 h-10 rounded-full object-cover" /></Link>))}</div></div>)}
             {project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Deadline: {new Date(project.deadline).toLocaleDateString()}</p></div>)}
             {project.delivery_days && !project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Delivery: {project.delivery_days} days after funding</p></div>)}
           </div>
         </div>
       </div>
 
-      {relatedProjects.length > 0 && (
-        <div className="mt-12 border-t border-gray-200 pt-12">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">More Like This</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {relatedProjects.map(p => (<ProjectCard key={p.id} project={p} />))}
-          </div>
-        </div>
-      )}
-
-      {showVideoModal && (
-        <LinkVideoModal
-            projectId={id} 
-            onClose={() => setShowVideoModal(false)}
-            onSuccess={handleVideoLinkSuccess}
-        />
-      )}
+      {relatedProjects.length > 0 && (<div className="mt-12 border-t border-gray-200 pt-12"><h2 className="text-2xl font-bold text-gray-900 mb-6">More Like This</h2><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{relatedProjects.map(p => (<ProjectCard key={p.id} project={p} />))}</div></div>)}
+      {showVideoModal && (<LinkVideoModal projectId={id} onClose={() => setShowVideoModal(false)} onSuccess={handleVideoLinkSuccess} />)}
+      {showResourceModal && (<AddResourceModal videoId={selectedVideoId} onClose={() => setShowResourceModal(false)} onSuccess={handleAddResourceSuccess} />)}
     </div>
   );
 };
