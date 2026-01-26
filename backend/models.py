@@ -137,6 +137,7 @@ class Project(SQLModel, table=True):
     is_series: bool = Field(default=False)
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
+    project_image_url: Optional[str] = None
 
 class ProjectUpdate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

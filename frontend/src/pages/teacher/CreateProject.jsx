@@ -14,6 +14,7 @@ const CreateProject = () => {
     funding_goal: '',
     delivery_days: '',
     tags: '',
+    project_image_url: '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -82,6 +83,20 @@ const CreateProject = () => {
             value={formData.description}
             onChange={handleChange}
             required
+          />
+        </div>
+        <div className="mb-4">
+          <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="project_image_url">
+            Project Image URL (Optional)
+          </label>
+          <input
+            className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+            id="project_image_url"
+            type="url"
+            placeholder="https://example.com/your-image.png"
+            name="project_image_url"
+            value={formData.project_image_url}
+            onChange={handleChange}
           />
         </div>
         <div className="flex flex-wrap -mx-3 mb-4">

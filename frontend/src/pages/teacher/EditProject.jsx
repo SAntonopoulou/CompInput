@@ -15,6 +15,7 @@ const EditProject = () => {
     funding_goal: 0,
     delivery_days: 0,
     tags: '',
+    project_image_url: '',
   });
   const [loading, setLoading] = useState(true);
 
@@ -70,6 +71,10 @@ const EditProject = () => {
         <div>
           <label htmlFor="description" className="block text-sm font-medium text-gray-700">Description</label>
           <textarea name="description" id="description" rows="4" value={project.description} onChange={handleChange} required className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"></textarea>
+        </div>
+        <div>
+          <label htmlFor="project_image_url" className="block text-sm font-medium text-gray-700">Project Image URL (Optional)</label>
+          <input type="url" name="project_image_url" id="project_image_url" value={project.project_image_url || ''} onChange={handleChange} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>

@@ -51,6 +51,7 @@ class ProjectCreate(BaseModel):
     is_series: bool = False
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
+    project_image_url: Optional[str] = None
 
 class ProjectUpdateModel(BaseModel):
     title: Optional[str] = None
@@ -62,6 +63,7 @@ class ProjectUpdateModel(BaseModel):
     delivery_days: Optional[int] = None
     status: Optional[ProjectStatus] = None
     tags: Optional[str] = None
+    project_image_url: Optional[str] = None
 
 class UpdateCreate(BaseModel):
     content: str
@@ -126,6 +128,7 @@ class ProjectRead(BaseModel):
     is_series: bool = False
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
+    project_image_url: Optional[str] = None
 
     class Config:
         from_attributes = True

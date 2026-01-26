@@ -7,7 +7,9 @@ import RespondToReview from '../components/RespondToReview';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import VideoPlayer from '../components/VideoPlayer';
-import VerifiedBadge from '../components/VerifiedBadge'; // Import the new component
+import VerifiedBadge from '../components/VerifiedBadge';
+import defaultProjectImage from '../assets/default_project_image.svg'; // Import the default image
+import { getVideoThumbnail } from '../utils/video'; // Ensure this is imported
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -30,6 +32,8 @@ const ProjectDetail = () => {
   const [newUpdate, setNewUpdate] = useState('');
   const [editingUpdateId, setEditingUpdateId] = useState(null);
   const [editingContent, setEditingContent] = useState('');
+  const [isEditingImage, setIsEditingImage] = useState(false);
+  const [newImageUrl, setNewImageUrl] = useState('');
   
   const { addToast } = useToast();
   const token = localStorage.getItem('token');
@@ -131,6 +135,18 @@ const ProjectDetail = () => {
     }
   };
 
+  const handleUpdateImage = async () => {
+    try {
+      await client.patch(`/projects/${id}`, { project_image_url: newImageUrl });
+      addToast("Project image updated successfully!", "success");
+      setIsEditingImage(false);
+      fetchData(); // Re-fetch project data to display the new image
+    } catch (error) {
+      console.error("Failed to update project image", error);
+      addToast(error.response?.data?.detail || "Failed to update image.", "error");
+    }
+  };
+
   if (loading) return <div className="text-center py-10">Loading...</div>;
   if (error) return <div className="text-center py-10 text-red-600">{error}</div>;
   if (!project) return null;
@@ -141,10 +157,57 @@ const ProjectDetail = () => {
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
   const canRate = project.is_backed_by_user && project.status === 'completed';
 
+  let headerImageUrl = defaultProjectImage;
+  if (project.project_image_url) {
+    headerImageUrl = project.project_image_url;
+  } else if (!project.is_series && project.videos && project.videos.length > 0) {
+    headerImageUrl = getVideoThumbnail(project.videos[0]);
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       <div className="lg:grid lg:grid-cols-3 lg:gap-8">
         <div className="lg:col-span-2">
+          {/* Project Image Header */}
+          <div className="relative mb-8 rounded-lg overflow-hidden shadow-lg group">
+            <img src={headerImageUrl} alt={project.title} className="w-full h-64 object-cover" />
+            {isOwner && !isEditingImage && (
+              <button
+                onClick={() => {
+                  setIsEditingImage(true);
+                  setNewImageUrl(project.project_image_url || '');
+                }}
+                className="absolute top-3 right-3 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Edit Project Image"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                  <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {isOwner && isEditingImage && (
+            <div className="mb-6 p-4 border rounded-lg bg-gray-50 shadow-sm">
+              <label htmlFor="project_image_url" className="block text-sm font-medium text-gray-700">
+                Project Image URL
+              </label>
+              <input
+                type="url"
+                id="project_image_url"
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                value={newImageUrl}
+                onChange={(e) => setNewImageUrl(e.target.value)}
+                placeholder="https://example.com/your-image.png"
+              />
+              <div className="mt-3 flex justify-end space-x-3">
+                <button onClick={() => setIsEditingImage(false)} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button onClick={handleUpdateImage} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Save Image</button>
+              </div>
+            </div>
+          )}
+
           <h1 className="text-3xl font-extrabold text-gray-900 sm:text-4xl mb-4">{project.title}</h1>
           <div className="flex flex-wrap items-center gap-2 mb-6">
             <span className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">{project.language}</span>

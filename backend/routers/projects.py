@@ -112,7 +112,8 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         my_rating=my_rating,
         is_series=project.is_series,
         num_videos=project.num_videos,
-        price_per_video=project.price_per_video
+        price_per_video=project.price_per_video,
+        project_image_url=project.project_image_url
     )
 
 
