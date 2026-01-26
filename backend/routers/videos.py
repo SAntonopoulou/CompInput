@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Video, Project, ProjectStatus, User, Notification, Pledge, PledgeStatus, VideoComment
+from ..models import Video, Project, ProjectStatus, User, Notification, Pledge, PledgeStatus, VideoComment, ProjectUpdate
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 
@@ -81,6 +81,14 @@ def create_video(
     )
     session.add(video)
     
+    # Create a project update
+    update_content = f"A new video has been posted: '{video.title}'"
+    project_update = ProjectUpdate(
+        content=update_content,
+        project_id=project.id
+    )
+    session.add(project_update)
+
     pledges = session.exec(select(Pledge).where(Pledge.project_id == project.id, Pledge.status == PledgeStatus.CAPTURED)).all()
 
     notified_users = set()

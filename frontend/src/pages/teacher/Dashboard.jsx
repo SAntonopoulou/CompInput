@@ -175,6 +175,13 @@ const Dashboard = () => {
                 }
               }
 
+              let canLinkVideo = false;
+              if (project.is_series) {
+                canLinkVideo = project.num_videos !== null && videoCount < project.num_videos;
+              } else {
+                canLinkVideo = videoCount < 1;
+              }
+
               return (
                 <li key={project.id}>
                   <div className="px-4 py-4 sm:px-6">
@@ -200,12 +207,14 @@ const Dashboard = () => {
                         
                         {project.status === 'successful' && (
                           <>
-                            <button
-                              onClick={() => handleLinkVideo(project.id)}
-                              className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200"
-                            >
-                              Link Video
-                            </button>
+                            {canLinkVideo && (
+                              <button
+                                onClick={() => handleLinkVideo(project.id)}
+                                className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200"
+                              >
+                                Link Video
+                              </button>
+                            )}
                             <button
                               onClick={() => confirmMarkAsReady(project.id)}
                               className={`px-2 py-1 text-xs font-semibold rounded-full ${isMarkAsReadyDisabled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}

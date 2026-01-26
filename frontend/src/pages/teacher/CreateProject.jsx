@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../../api/client';
 import { useToast } from '../../context/ToastContext';
@@ -14,13 +14,28 @@ const CreateProject = () => {
     funding_goal: '',
     delivery_days: '',
     tags: '',
+    is_series: false,
+    num_videos: 1,
+    price_per_video: 0,
     project_image_url: '',
   });
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (formData.is_series && formData.price_per_video > 0 && formData.num_videos > 0) {
+      setFormData(prev => ({
+        ...prev,
+        funding_goal: (formData.price_per_video * formData.num_videos).toFixed(2)
+      }));
+    }
+  }, [formData.is_series, formData.price_per_video, formData.num_videos]);
+
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    setFormData((prev) => ({ 
+      ...prev, 
+      [name]: type === 'checkbox' ? checked : value 
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -38,6 +53,8 @@ const CreateProject = () => {
         ...formData,
         funding_goal: Math.round(parseFloat(formData.funding_goal) * 100),
         delivery_days: parseInt(formData.delivery_days, 10),
+        num_videos: formData.is_series ? parseInt(formData.num_videos, 10) : null,
+        price_per_video: formData.is_series ? Math.round(parseFloat(formData.price_per_video) * 100) : null,
       };
 
       await client.post('/projects/', payload);
@@ -131,6 +148,31 @@ const CreateProject = () => {
             />
           </div>
         </div>
+        <div className="mb-4">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              name="is_series"
+              checked={formData.is_series}
+              onChange={handleChange}
+              className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
+            />
+            <span className="ml-2 text-gray-700 text-sm font-bold">Is this a series of videos?</span>
+          </label>
+        </div>
+        {formData.is_series && (
+          <div className="flex flex-wrap -mx-3 mb-4">
+            <div className="w-full md:w-1/2 px-3 mb-6 md:mb-0">
+              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="num_videos">Number of Videos</label>
+              <input type="number" name="num_videos" id="num_videos" value={formData.num_videos} onChange={handleChange} min="1" className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" />
+            </div>
+            <div className="w-full md:w-1/2 px-3">
+              <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="price_per_video">Price Per Video (€)</label>
+              <input type="number" name="price_per_video" id="price_per_video" value={formData.price_per_video} onChange={handleChange} min="0" step="0.01" className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" />
+              <p className="text-xs text-gray-500 mt-1">Set to 0 if you want to define a total funding goal instead.</p>
+            </div>
+          </div>
+        )}
         <div className="flex flex-wrap -mx-3 mb-4">
           <div className="w-full md:w-1/2 px-3 mb-6 md:mb-0">
             <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="funding_goal">
@@ -146,6 +188,7 @@ const CreateProject = () => {
               onChange={handleChange}
               min="1"
               step="0.01"
+              disabled={formData.is_series && formData.price_per_video > 0}
               required
             />
           </div>

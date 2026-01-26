@@ -10,6 +10,7 @@ import VideoPlayer from '../components/VideoPlayer';
 import VerifiedBadge from '../components/VerifiedBadge';
 import defaultProjectImage from '../assets/default_project_image.svg'; // Import the default image
 import { getVideoThumbnail } from '../utils/video'; // Ensure this is imported
+import LinkVideoModal from '../components/VideoUpload'; // Import LinkVideoModal
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -34,6 +35,7 @@ const ProjectDetail = () => {
   const [editingContent, setEditingContent] = useState('');
   const [isEditingImage, setIsEditingImage] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [showVideoModal, setShowVideoModal] = useState(false); // New state for video modal
   
   const { addToast } = useToast();
   const token = localStorage.getItem('token');
@@ -147,6 +149,12 @@ const ProjectDetail = () => {
     }
   };
 
+  const handleVideoLinkSuccess = () => {
+    setShowVideoModal(false);
+    addToast("Video linked successfully!", 'success');
+    fetchData(); // Refresh project data to show new video and update
+  };
+
   if (loading) return <div className="text-center py-10">Loading...</div>;
   if (error) return <div className="text-center py-10 text-red-600">{error}</div>;
   if (!project) return null;
@@ -156,6 +164,14 @@ const ProjectDetail = () => {
   const isOwner = currentUser && currentUser.id === project.teacher_id;
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
   const canRate = project.is_backed_by_user && project.status === 'completed';
+
+  const videoCount = videos.length;
+  let canLinkVideo = false;
+  if (project.is_series) {
+    canLinkVideo = project.num_videos !== null && videoCount < project.num_videos;
+  } else {
+    canLinkVideo = videoCount < 1;
+  }
 
   let headerImageUrl = defaultProjectImage;
   if (project.project_image_url) {
@@ -299,9 +315,14 @@ const ProjectDetail = () => {
           <div className="mt-8 border-t border-gray-200 pt-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Project Updates</h2>
             {isOwner && (
-              <div className="mb-6">
+              <div className="mb-6 flex justify-between items-center">
                 <textarea className="w-full border border-gray-300 rounded-md p-2 text-sm" rows={3} placeholder="Post an update for your backers..." value={newUpdate} onChange={(e) => setNewUpdate(e.target.value)} />
-                <div className="mt-2 text-right"><button onClick={handlePostUpdate} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Post Update</button></div>
+                <div className="ml-4 flex flex-col space-y-2">
+                  <button onClick={handlePostUpdate} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Post Update</button>
+                  {isOwner && project.status === 'successful' && canLinkVideo && (
+                    <button onClick={() => setShowVideoModal(true)} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">Link Video</button>
+                  )}
+                </div>
               </div>
             )}
             {updates.length === 0 ? (<p className="text-gray-500 text-sm">No updates yet.</p>) : (
@@ -361,6 +382,14 @@ const ProjectDetail = () => {
             {relatedProjects.map(p => (<ProjectCard key={p.id} project={p} />))}
           </div>
         </div>
+      )}
+
+      {showVideoModal && (
+        <LinkVideoModal
+            projectId={id} 
+            onClose={() => setShowVideoModal(false)}
+            onSuccess={handleVideoLinkSuccess}
+        />
       )}
     </div>
   );
