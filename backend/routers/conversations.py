@@ -3,100 +3,18 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, WebSocket, WebSocketDisconnect, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
 import json
 
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType, OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist, Notification
 from ..security import decode_access_token
+from ..schemas import (
+    ConversationCreate, MessageCreate, OfferCreate, DemoVideoUpdate,
+    UserPublicRead, MessageRead, ConversationRead, ConversationSummaryRead, InboxSummary, RequestRead as FullRequestRead
+)
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
-
-# Pydantic Schemas
-class ConversationCreate(BaseModel):
-    request_id: int
-
-class MessageCreate(BaseModel):
-    content: str
-    replied_to_message_id: Optional[int] = None
-
-class OfferCreate(BaseModel):
-    offer_description: str
-    offer_price: int
-
-class DemoVideoUpdate(BaseModel):
-    url: str
-
-class UserPublicRead(BaseModel):
-    id: int
-    full_name: str
-    avatar_url: Optional[str] = None
-    role: UserRole
-
-    class Config:
-        from_attributes = True
-
-class MessageRead(BaseModel):
-    id: int
-    conversation_id: int
-    sender_id: int
-    content: str
-    created_at: datetime
-    is_read: bool
-    sender_full_name: str
-    sender_avatar_url: Optional[str] = None
-    replied_to_message_id: Optional[int] = None
-    replied_to_message_content: Optional[str] = None
-    replied_to_sender_name: Optional[str] = None
-    message_type: MessageType
-    offer_description: Optional[str] = None
-    offer_price: Optional[int] = None
-    offer_status: Optional[OfferStatus] = None
-
-    class Config:
-        from_attributes = True
-
-class ConversationRead(BaseModel):
-    id: int
-    request_id: int
-    teacher_id: int
-    student_id: int
-    status: ConversationStatus
-    student_demo_video_url: Optional[str] = None
-    demo_video_requested: bool = False
-    created_at: datetime
-    updated_at: datetime
-    
-    request_title: str
-    teacher: UserPublicRead
-    student: UserPublicRead
-    messages: List[MessageRead] = []
-
-    class Config:
-        from_attributes = True
-
-class ConversationSummaryRead(BaseModel):
-    id: int
-    request_id: int
-    teacher_id: int
-    student_id: int
-    status: ConversationStatus
-    updated_at: datetime
-    
-    request_title: str
-    other_participant: UserPublicRead
-    last_message_content: Optional[str] = None
-    last_message_created_at: Optional[datetime] = None
-    unread_messages_count: int = 0
-
-    class Config:
-        from_attributes = True
-
-class InboxSummary(BaseModel):
-    conversations: List[ConversationSummaryRead]
-    total_unread_count: int
-
 
 # ConnectionManager for WebSockets
 class ConnectionManager:
@@ -154,12 +72,17 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
     # Ensure relationships are loaded
     if not conversation.request:
         conversation.request = session.get(Request, conversation.request_id)
+    
+    # Ensure request.user is loaded for user_name
+    if not conversation.request.user:
+        conversation.request.user = session.get(User, conversation.request.user_id)
 
     # Explicitly fetch teacher and student to avoid relationship loading bugs
     teacher = session.get(User, conversation.teacher_id)
     student = session.get(User, conversation.student_id)
     if not teacher or not student:
         raise HTTPException(status_code=500, detail="Could not load conversation participants.")
+    
     messages_read = []
     for msg in conversation.messages:
         sender_user = session.get(User, msg.sender_id)
@@ -188,8 +111,33 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
             message_type=msg.message_type,
             offer_description=msg.offer_description,
             offer_price=msg.offer_price,
-            offer_status=msg.offer_status
+            offer_status=msg.offer_status,
+            offer_title=msg.offer_title,
+            offer_language=msg.offer_language,
+            offer_level=msg.offer_level,
+            offer_tags=msg.offer_tags
         ))
+
+    # Manually construct RequestRead to ensure user_name is present
+    request_read_data = conversation.request.model_dump()
+    request_read_data["user_name"] = conversation.request.user.full_name if conversation.request.user else "Unknown"
+    
+    # Handle associated_project_id, project_title, project_description, project_funding_goal
+    project_data = {
+        "associated_project_id": None,
+        "project_title": None,
+        "project_description": None,
+        "project_funding_goal": None
+    }
+    if conversation.request.status == RequestStatus.ACCEPTED:
+        project = session.exec(select(Project).where(Project.origin_request_id == conversation.request.id)).first()
+        if project:
+            project_data["associated_project_id"] = project.id
+            project_data["project_title"] = project.title
+            project_data["project_description"] = project.description
+            project_data["project_funding_goal"] = project.funding_goal
+    
+    request_read_data.update(project_data)
 
     return ConversationRead(
         id=conversation.id,
@@ -201,7 +149,7 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
         demo_video_requested=conversation.demo_video_requested,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
-        request_title=conversation.request.title,
+        request=FullRequestRead(**request_read_data),
         teacher=UserPublicRead.model_validate(teacher),
         student=UserPublicRead.model_validate(student),
         messages=messages_read
@@ -380,7 +328,7 @@ def get_full_conversation(
         select(Conversation)
         .where(Conversation.id == conversation_id)
         .options(
-            selectinload(Conversation.request),
+            selectinload(Conversation.request).selectinload(Request.user),
             selectinload(Conversation.teacher),
             selectinload(Conversation.student),
             selectinload(Conversation.messages)
@@ -461,7 +409,11 @@ async def send_message(
         message_type=message.message_type,
         offer_description=message.offer_description,
         offer_price=message.offer_price,
-        offer_status=message.offer_status
+        offer_status=message.offer_status,
+        offer_title=message.offer_title,
+        offer_language=message.offer_language,
+        offer_level=message.offer_level,
+        offer_tags=message.offer_tags
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -507,7 +459,11 @@ async def make_offer(
         message_type=MessageType.OFFER,
         offer_description=offer_in.offer_description,
         offer_price=offer_in.offer_price,
-        offer_status=OfferStatus.PENDING
+        offer_status=OfferStatus.PENDING,
+        offer_title=offer_in.title,
+        offer_language=offer_in.language,
+        offer_level=offer_in.level,
+        offer_tags=offer_in.tags
     )
     session.add(message)
     conversation.updated_at = datetime.utcnow()
@@ -528,7 +484,11 @@ async def make_offer(
         message_type=message.message_type,
         offer_description=message.offer_description,
         offer_price=message.offer_price,
-        offer_status=message.offer_status
+        offer_status=message.offer_status,
+        offer_title=message.offer_title,
+        offer_language=message.offer_language,
+        offer_level=message.offer_level,
+        offer_tags=message.offer_tags
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -560,10 +520,11 @@ async def accept_offer(
     session.add(request)
 
     new_project = Project(
-        title=request.title,
+        title=offer_message.offer_title,
         description=offer_message.offer_description,
-        language=request.language,
-        level=request.level,
+        language=offer_message.offer_language,
+        level=offer_message.offer_level,
+        tags=offer_message.offer_tags,
         funding_goal=offer_message.offer_price,
         teacher_id=conversation.teacher_id,
         origin_request_id=request.id,
@@ -669,7 +630,11 @@ async def leave_conversation(
         message_type=leave_message.message_type,
         offer_description=None,
         offer_price=None,
-        offer_status=None
+        offer_status=None,
+        offer_title=None,
+        offer_language=None,
+        offer_level=None,
+        offer_tags=None
     )
 
     # 2. Close the conversation
@@ -759,7 +724,11 @@ async def teacher_leave_conversation(
         message_type=leave_message.message_type,
         offer_description=None,
         offer_price=None,
-        offer_status=None
+        offer_status=None,
+        offer_title=None,
+        offer_language=None,
+        offer_level=None,
+        offer_tags=None
     )
 
     # 2. Close the conversation
@@ -767,8 +736,6 @@ async def teacher_leave_conversation(
     session.add(conversation)
 
     # 3. Blacklist the teacher from the request associated with that conversation
-    # This is already handled by the teacher leaving, so no need to add another blacklist entry here
-    # However, if the teacher leaves, they should be blacklisted from this specific request
     blacklist_entry = RequestBlacklist(
         request_id=conversation.request_id,
         teacher_id=current_user.id
@@ -873,6 +840,10 @@ async def request_demo_video(
         sender_full_name=sender_user.full_name,
         sender_avatar_url=sender_user.avatar_url,
         message_type=message.message_type,
+        offer_title=None,
+        offer_language=None,
+        offer_level=None,
+        offer_tags=None
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -925,6 +896,10 @@ async def update_demo_video_url(
         sender_full_name=sender_user.full_name,
         sender_avatar_url=sender_user.avatar_url,
         message_type=message.message_type,
+        offer_title=None,
+        offer_language=None,
+        offer_level=None,
+        offer_tags=None
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -997,7 +972,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: int, token: 
 @router.websocket("/ws")
 async def websocket_global_notifications_endpoint(websocket: WebSocket, token: str = Query(...), session: Session = Depends(get_session)):
     user = await get_user_from_token(token, session)
-    if not user:
+    if not token:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
 

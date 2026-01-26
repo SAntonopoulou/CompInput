@@ -7,9 +7,9 @@ from sqlalchemy.orm import selectinload
 
 from ..database import get_session
 from ..deps import get_current_admin, get_current_user_optional
-from ..models import User, Project, Pledge, UserRole, ProjectStatus, PledgeStatus, Request, Notification, TeacherVerification, VerificationStatus
-from ..routers.projects import _cancel_project_logic
-from ..schemas import ProjectRead, _create_project_read
+from ..models import User, Project, Pledge, UserRole, ProjectStatus, PledgeStatus, Request, Notification, TeacherVerification, VerificationStatus, RequestBlacklist
+from ..routers.projects import _cancel_project_logic, _create_project_read # Corrected import
+from ..schemas import ProjectRead # Corrected import
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

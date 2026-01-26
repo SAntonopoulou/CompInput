@@ -10,9 +10,9 @@ from collections import defaultdict
 
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification, Conversation, Message
-from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
-from ..routers.projects import _cancel_project_logic
+from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification, Conversation, Message, RequestBlacklist
+from ..schemas import LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead, ProjectRead
+from ..routers.projects import _cancel_project_logic, _create_project_read
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
@@ -317,7 +317,7 @@ def get_teacher_ratings(
     statement = (
         select(ProjectRating)
         .join(Project)
-        .where(Project.teacher_id == user_id)
+        .where(Project.teacher_id == user.id)
         .options(selectinload(ProjectRating.project))
         .order_by(ProjectRating.created_at.desc())
     )
@@ -347,7 +347,7 @@ def search_teachers(
     query: str = Query(..., min_length=1),
     session: Session = Depends(get_session)
 ):
-    statement = select(User).where(User.role == UserRole.TEACH-ER).where(User.full_name.ilike(f"%{query}%"))
+    statement = select(User).where(User.role == UserRole.TEACHER).where(User.full_name.ilike(f"%{query}%"))
     teachers = session.exec(statement).all()
     return [TeacherRead(id=t.id, full_name=t.full_name) for t in teachers]
 

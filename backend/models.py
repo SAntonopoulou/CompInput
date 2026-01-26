@@ -262,6 +262,10 @@ class Message(SQLModel, table=True):
     offer_description: Optional[str] = None
     offer_price: Optional[int] = None
     offer_status: Optional[OfferStatus] = Field(default=None)
+    offer_title: Optional[str] = None
+    offer_language: Optional[str] = None
+    offer_level: Optional[str] = None
+    offer_tags: Optional[str] = None
 
     conversation: Optional["Conversation"] = Relationship(back_populates="messages")
     sender: Optional["User"] = Relationship(back_populates="sent_messages")

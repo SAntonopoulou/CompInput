@@ -5,13 +5,14 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import or_
+from sqlalchemy import or_, and_ # Import and_
 from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist, Conversation, ConversationStatus, Message, MessageType
-from .conversations import manager, MessageRead
+from ..schemas import RequestCreate, RequestRead, ProjectResponse, CounterOffer, MessageRead
+from .conversations import manager
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -20,54 +21,6 @@ def json_serial(obj):
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     raise TypeError ("Type %s not serializable" % type(obj))
-
-class RequestCreate(BaseModel):
-    title: str
-    description: str
-    language: str
-    level: str
-    budget: int = 0 # in cents
-    target_teacher_id: Optional[int] = None
-    is_private: bool = False
-
-class RequestRead(BaseModel):
-    id: int
-    title: str
-    description: str
-    language: str
-    level: str
-    budget: int
-    status: RequestStatus
-    target_teacher_id: Optional[int]
-    counter_offer_amount: Optional[int]
-    is_private: bool
-    created_at: datetime
-    user_id: int
-    user_name: str
-    associated_project_id: Optional[int] = None
-    project_title: Optional[str] = None
-    project_description: Optional[str] = None
-    project_funding_goal: Optional[int] = None
-
-    class Config:
-        from_attributes = True
-
-class ProjectResponse(BaseModel):
-    id: int
-    title: str
-    description: str
-    language: str
-    level: str
-    funding_goal: int
-    status: ProjectStatus
-    teacher_id: int
-    origin_request_id: Optional[int] = None
-
-    class Config:
-        from_attributes = True
-
-class CounterOffer(BaseModel):
-    amount: int
 
 @router.post("/", response_model=Request)
 def create_request(
@@ -126,11 +79,11 @@ def list_requests(
     # 3. The current user is a TEACHER, it's targeted to them, and its status is OPEN or NEGOTIATING.
     conditions = [
         Request.user_id == current_user.id,
-        (Request.is_private == False) & Request.status.in_(visible_statuses),
+        and_(Request.is_private == False, Request.status.in_(visible_statuses)),
     ]
     if current_user.role == UserRole.TEACHER:
         conditions.append(
-             (Request.target_teacher_id == current_user.id) & Request.status.in_(visible_statuses)
+             and_(Request.target_teacher_id == current_user.id, Request.status.in_(visible_statuses))
         )
 
     query = query.where(or_(*conditions))

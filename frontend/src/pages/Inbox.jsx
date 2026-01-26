@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useInbox } from '../context/InboxContext';
-import { FaPaperPlane, FaVideo, FaReply, FaTimes, FaDollarSign, FaFileVideo } from 'react-icons/fa';
+import { FaPaperPlane, FaVideo, FaReply, FaTimes, FaDollarSign, FaFileVideo, FaTag } from 'react-icons/fa';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { getVideoThumbnail } from '../utils/video'; // Assuming this might be useful later
 
@@ -27,6 +27,10 @@ const Inbox = () => {
   const [showOfferModal, setShowOfferModal] = useState(false);
   const [offerDescription, setOfferDescription] = useState('');
   const [offerPrice, setOfferPrice] = useState(0);
+  const [offerTitle, setOfferTitle] = useState('');
+  const [offerLanguage, setOfferLanguage] = useState('');
+  const [offerLevel, setOfferLevel] = useState('');
+  const [offerTags, setOfferTags] = useState('');
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [modalConfig, setModalConfig] = useState({});
@@ -106,6 +110,12 @@ const Inbox = () => {
   useEffect(() => {
     fetchCurrentConversation();
   }, [fetchCurrentConversation]);
+
+  useEffect(() => {
+    if (currentConversation) {
+      console.log("Current Conversation:", currentConversation);
+    }
+  }, [currentConversation]);
 
   useEffect(() => {
     if (!conversationId || !user || !token) return;
@@ -264,19 +274,21 @@ const Inbox = () => {
 
   const handleMakeOffer = async () => {
     if (!currentConversation || !user || user.id !== currentConversation.teacher_id) return;
-    if (!offerDescription.trim() || offerPrice <= 0) {
-      addToast('Please provide a description and a valid price for the offer.', 'error');
+    if (!offerTitle.trim() || !offerDescription.trim() || offerPrice <= 0 || !offerLanguage.trim() || !offerLevel.trim()) {
+      addToast('Please fill out all required fields for the offer.', 'error');
       return;
     }
     try {
       await client.post(`/conversations/${currentConversation.id}/offer`, {
+        title: offerTitle,
         offer_description: offerDescription,
         offer_price: Math.round(offerPrice * 100),
+        language: offerLanguage,
+        level: offerLevel,
+        tags: offerTags,
       });
       addToast('Offer sent!', 'success');
       setShowOfferModal(false);
-      setOfferDescription('');
-      setOfferPrice(0);
     } catch (error) {
       addToast(error.response?.data?.detail || 'Failed to send offer', 'error');
     }
@@ -334,6 +346,54 @@ const Inbox = () => {
 
   const hasPendingOffer = currentConversation?.messages?.some(m => m.message_type === 'offer' && m.offer_status === 'pending');
 
+  const renderOfferMessage = (message) => (
+    <div className="p-4 rounded-lg bg-white border-2 border-indigo-200 shadow-md my-2 text-gray-800">
+      <h4 className="font-bold text-lg text-indigo-700 mb-2">Project Offer from {message.sender_full_name}</h4>
+      <div className="space-y-3">
+        <div>
+          <p className="font-semibold text-gray-600">Project Title</p>
+          <p className="text-gray-900">{message.offer_title}</p>
+        </div>
+        <div>
+          <p className="font-semibold text-gray-600">Description</p>
+          <p className="text-gray-900">{message.offer_description}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="font-semibold text-gray-600">Language</p>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{message.offer_language}</span>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-600">Level</p>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{message.offer_level}</span>
+          </div>
+        </div>
+        {message.offer_tags && (
+          <div>
+            <p className="font-semibold text-gray-600">Tags</p>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {message.offer_tags.split(',').map(tag => tag.trim()).filter(Boolean).map((tag, index) => (
+                <span key={index} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800"><FaTag className="mr-1.5" />{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="pt-3 border-t border-gray-200">
+          <p className="font-semibold text-gray-600">Price</p>
+          <p className="text-2xl font-bold text-indigo-600">{formatCurrency(message.offer_price)}</p>
+        </div>
+      </div>
+      {message.offer_status === 'pending' && user.id === currentConversation.student_id && (
+        <div className="mt-4 flex space-x-2">
+          <button onClick={() => handleAcceptOfferClick(message.id)} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Accept Offer</button>
+          <button onClick={() => handleRejectOfferClick(message.id)} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors">Reject Offer</button>
+        </div>
+      )}
+      {message.offer_status === 'accepted' && <div className="mt-4 text-center font-semibold text-green-600 bg-green-50 p-2 rounded-md">Offer Accepted</div>}
+      {message.offer_status === 'rejected' && <div className="mt-4 text-center font-semibold text-red-600 bg-red-50 p-2 rounded-md">Offer Rejected</div>}
+    </div>
+  );
+
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
       <div className="flex h-[calc(100vh-128px)] bg-white shadow-lg rounded-lg">
@@ -378,14 +438,14 @@ const Inbox = () => {
                             {message.content}
                           </div>
                         </div>
+                      ) : message.message_type === 'offer' ? (
+                        renderOfferMessage(message)
                       ) : (
                         <div className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
                           <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'}`}>
                             {message.replied_to_message_id && <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}><p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>{message.replied_to_sender_name || 'Deleted User'}</p><p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>{message.replied_to_message_content}</p></div>}
                             
-                            {message.message_type === 'offer' ? (
-                              <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300 text-yellow-800"><p className="font-bold">Offer from {message.sender_full_name}:</p><p>{message.offer_description}</p><p className="font-bold">{formatCurrency(message.offer_price)}</p>{message.offer_status === 'pending' && user.id === currentConversation.student_id && <div className="mt-2 flex space-x-2"><button onClick={() => handleAcceptOfferClick(message.id)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-1 px-2 rounded-md">Accept Offer</button><button onClick={() => handleRejectOfferClick(message.id)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1 px-2 rounded-md">Reject Offer</button></div>}{message.offer_status === 'accepted' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Offer Accepted</span>}{message.offer_status === 'rejected' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Offer Rejected</span>}</div>
-                            ) : message.message_type === 'demo_video' ? (
+                            {message.message_type === 'demo_video' ? (
                               embedUrl ? (
                                 <div className="aspect-w-16 aspect-h-9">
                                   <iframe src={embedUrl} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Submitted Demo Video"></iframe>
@@ -422,7 +482,17 @@ const Inbox = () => {
                 <form onSubmit={handleSendMessage} className="flex items-center">
                   {user.id === currentConversation.teacher_id && (
                     <>
-                      <button type="button" onClick={() => {setShowOfferModal(true); setOfferDescription(currentConversation.request_title); setOfferPrice(currentConversation.request.budget / 100);}} className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-3 rounded-l-md flex items-center justify-center mr-1" disabled={hasPendingOffer}><FaDollarSign className="mr-1" /> Offer</button>
+                      <button type="button" onClick={() => {
+                        setShowOfferModal(true);
+                        if (currentConversation.request) {
+                          setOfferTitle(currentConversation.request.title);
+                          setOfferDescription(currentConversation.request.description);
+                          setOfferPrice(currentConversation.request.budget / 100);
+                          setOfferLanguage(currentConversation.request.language);
+                          setOfferLevel(currentConversation.request.level);
+                          setOfferTags(currentConversation.request.tags || '');
+                        }
+                      }} className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-3 rounded-l-md flex items-center justify-center mr-1" disabled={hasPendingOffer}><FaDollarSign className="mr-1" /> Offer</button>
                       <button type="button" onClick={handleRequestDemoVideo} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 flex items-center justify-center mr-1" disabled={currentConversation.demo_video_requested}><FaFileVideo className="mr-1" /> Demo</button>
                     </>
                   )}
@@ -434,7 +504,7 @@ const Inbox = () => {
           ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a conversation to start chatting.</div>}
         </div>
       </div>
-      {showOfferModal && <div className="fixed z-10 inset-0 overflow-y-auto"><div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div className="fixed inset-0 transition-opacity" aria-hidden="true"><div className="absolute inset-0 bg-gray-500 opacity-75"></div></div><span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Make Project Offer</h3><div className="space-y-4"><div><label htmlFor="offerDescription" className="block text-sm font-medium text-gray-700">Project Description</label><textarea id="offerDescription" rows="3" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerDescription} onChange={(e) => setOfferDescription(e.target.value)}></textarea></div><div><label htmlFor="offerPrice" className="block text-sm font-medium text-gray-700">Offer Price (EUR)</label><input type="number" id="offerPrice" min="0" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerPrice} onChange={(e) => setOfferPrice(parseFloat(e.target.value))} /></div></div></div><div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" onClick={handleMakeOffer} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Send Offer</button><button type="button" onClick={() => setShowOfferModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button></div></div></div></div>}
+      {showOfferModal && <div className="fixed z-10 inset-0 overflow-y-auto"><div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div className="fixed inset-0 transition-opacity" aria-hidden="true"><div className="absolute inset-0 bg-gray-500 opacity-75"></div></div><span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Make Project Offer</h3><div className="space-y-4"><div><label htmlFor="offerTitle" className="block text-sm font-medium text-gray-700">Project Title</label><input type="text" id="offerTitle" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} /></div><div><label htmlFor="offerDescription" className="block text-sm font-medium text-gray-700">Project Description</label><textarea id="offerDescription" rows="3" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerDescription} onChange={(e) => setOfferDescription(e.target.value)}></textarea></div><div className="grid grid-cols-2 gap-4"><div><label htmlFor="offerLanguage" className="block text-sm font-medium text-gray-700">Language</label><input type="text" id="offerLanguage" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLanguage} onChange={(e) => setOfferLanguage(e.target.value)} /></div><div><label htmlFor="offerLevel" className="block text-sm font-medium text-gray-700">Level</label><input type="text" id="offerLevel" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLevel} onChange={(e) => setOfferLevel(e.target.value)} /></div></div><div><label htmlFor="offerTags" className="block text-sm font-medium text-gray-700">Tags (comma-separated)</label><input type="text" id="offerTags" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTags} onChange={(e) => setOfferTags(e.target.value)} /></div><div><label htmlFor="offerPrice" className="block text-sm font-medium text-gray-700">Offer Price (EUR)</label><input type="number" id="offerPrice" min="0" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerPrice} onChange={(e) => setOfferPrice(parseFloat(e.target.value))} /></div></div></div><div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" onClick={handleMakeOffer} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Send Offer</button><button type="button" onClick={() => setShowOfferModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button></div></div></div></div>}
       <ConfirmationModal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} onConfirm={modalConfig.onConfirm} title={modalConfig.title} message={modalConfig.message} confirmText={modalConfig.confirmText} isDanger={modalConfig.isDanger} />
     </div>
   );

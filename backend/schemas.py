@@ -1,17 +1,80 @@
-from datetime import datetime
+from __future__ import annotations
 from typing import List, Optional
+from datetime import datetime
 from pydantic import BaseModel
-from sqlmodel import Session, select
+from .models import UserRole, RequestStatus, MessageType, OfferStatus, ConversationStatus, ProjectStatus
 
-from .models import Project, Pledge, PledgeStatus, ProjectRating, Video, User, TeacherVerification, VerificationStatus
+class RequestCreate(BaseModel):
+    title: str
+    description: str
+    language: str
+    level: str
+    budget: int = 0
+    target_teacher_id: Optional[int] = None
+    is_private: bool = False
 
-class MyRatingRead(BaseModel):
-    rating: int
-    comment: Optional[str]
-
-class VideoReadSimple(BaseModel):
+class RequestRead(BaseModel):
     id: int
-    url: str
+    title: str
+    description: str
+    language: str
+    level: str
+    budget: int
+    status: RequestStatus
+    target_teacher_id: Optional[int]
+    counter_offer_amount: Optional[int]
+    is_private: bool
+    created_at: datetime
+    user_id: int
+    user_name: str
+    associated_project_id: Optional[int] = None
+    project_title: Optional[str] = None
+    project_description: Optional[str] = None
+    project_funding_goal: Optional[int] = None
+    tags: Optional[str] = None # Added tags field
+
+    class Config:
+        from_attributes = True
+
+class ProjectCreate(BaseModel):
+    title: str
+    description: str
+    language: str
+    level: str
+    funding_goal: int
+    delivery_days: int
+    tags: Optional[str] = None
+
+class ProjectUpdateModel(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    language: Optional[str] = None
+    level: Optional[str] = None
+    funding_goal: Optional[int] = None
+    deadline: Optional[datetime] = None
+    delivery_days: Optional[int] = None
+    status: Optional[ProjectStatus] = None
+    tags: Optional[str] = None
+
+class UpdateCreate(BaseModel):
+    content: str
+
+class UpdateRead(BaseModel):
+    id: int
+    content: str
+    created_at: datetime
+    project_id: int
+
+    class Config:
+        from_attributes = True
+
+class BackerRead(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
 
 class LanguageLevelsRead(BaseModel):
     language: str
@@ -26,26 +89,27 @@ class ProjectRead(BaseModel):
     description: str
     language: str
     level: str
+    tags: Optional[str] = None
     funding_goal: int
     current_funding: int
-    tags: Optional[str] = None
-    deadline: Optional[datetime]
-    delivery_days: Optional[int]
-    status: str
+    deadline: Optional[datetime] = None
+    delivery_days: Optional[int] = None
+    status: ProjectStatus
+    is_private: bool
     created_at: datetime
     updated_at: datetime
     teacher_id: int
     teacher_name: str
-    stripe_transfer_id: Optional[str] = None
-    requester_name: Optional[str] = None
-    requester_id: Optional[int] = None
     teacher_avatar_url: Optional[str] = None
-    requester_avatar_url: Optional[str] = None
     origin_request_id: Optional[int] = None
-    is_backer: bool = False
-    my_rating: Optional[MyRatingRead] = None
-    videos: List[VideoReadSimple] = []
-    teacher_verified_languages: List[str] = []
+    origin_request_title: Optional[str] = None
+    origin_request_student_name: Optional[str] = None
+    videos: List[str] = [] # Assuming list of video URLs or IDs
+    is_backed_by_user: bool = False
+    is_owner: bool = False
+    is_teacher_verified: bool = False
+    average_rating: Optional[float] = None
+    total_ratings: int = 0
 
     class Config:
         from_attributes = True
@@ -54,56 +118,110 @@ class PaginatedProjectRead(BaseModel):
     projects: List[ProjectRead]
     total_count: int
 
-def _create_project_read(p: Project, current_user: Optional[User], session: Session) -> ProjectRead:
-    teacher_name = p.teacher.full_name if p.teacher else "Unknown"
-    requester_name = p.request.user.full_name if (p.request and p.request.user) else None
-    requester_id = p.request.user.id if (p.request and p.request.user) else None
-    teacher_avatar_url = p.teacher.avatar_url if p.teacher else None
-    requester_avatar_url = p.request.user.avatar_url if (p.request and p.request.user) else None
+class ProjectResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    language: str
+    level: str
+    funding_goal: int
+    status: ProjectStatus
+    teacher_id: int
+    origin_request_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class CounterOffer(BaseModel):
+    amount: int
+
+class ConversationCreate(BaseModel):
+    request_id: int
+
+class MessageCreate(BaseModel):
+    content: str
+    replied_to_message_id: Optional[int] = None
+
+class OfferCreate(BaseModel):
+    offer_description: str
+    offer_price: int
+    title: str
+    language: str
+    level: str
+    tags: Optional[str] = None
+
+class DemoVideoUpdate(BaseModel):
+    url: str
+
+class UserPublicRead(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: Optional[str] = None
+    role: UserRole
+
+    class Config:
+        from_attributes = True
+
+class MessageRead(BaseModel):
+    id: int
+    conversation_id: int
+    sender_id: int
+    content: str
+    created_at: datetime
+    is_read: bool
+    sender_full_name: str
+    sender_avatar_url: Optional[str] = None
+    replied_to_message_id: Optional[int] = None
+    replied_to_message_content: Optional[str] = None
+    replied_to_sender_name: Optional[str] = None
+    message_type: MessageType
+    offer_description: Optional[str] = None
+    offer_price: Optional[int] = None
+    offer_status: Optional[OfferStatus] = None
+    offer_title: Optional[str] = None
+    offer_language: Optional[str] = None
+    offer_level: Optional[str] = None
+    offer_tags: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class ConversationRead(BaseModel):
+    id: int
+    request_id: int
+    teacher_id: int
+    student_id: int
+    status: ConversationStatus
+    student_demo_video_url: Optional[str] = None
+    demo_video_requested: bool = False
+    created_at: datetime
+    updated_at: datetime
     
-    is_backer = False
-    my_rating_obj = None
-    if current_user:
-        is_backer_pledge = session.exec(select(Pledge).where(Pledge.project_id == p.id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first()
-        is_backer = is_backer_pledge is not None
-        
-        if is_backer:
-            rating = session.exec(select(ProjectRating).where(ProjectRating.project_id == p.id, ProjectRating.user_id == current_user.id)).first()
-            if rating:
-                my_rating_obj = MyRatingRead(rating=rating.rating, comment=rating.comment)
+    request: RequestRead
+    teacher: UserPublicRead
+    student: UserPublicRead
+    messages: List[MessageRead] = []
 
-    teacher_verified_languages = []
-    if p.teacher:
-        verifications = session.exec(select(TeacherVerification.language).where(
-            TeacherVerification.teacher_id == p.teacher_id,
-            TeacherVerification.status == VerificationStatus.APPROVED
-        )).all()
-        teacher_verified_languages = verifications
+    class Config:
+        from_attributes = True
 
-    return ProjectRead(
-        id=p.id,
-        title=p.title,
-        description=p.description,
-        language=p.language,
-        level=p.level,
-        funding_goal=p.funding_goal,
-        tags=p.tags,
-        current_funding=p.current_funding,
-        deadline=p.deadline,
-        delivery_days=p.delivery_days,
-        status=p.status,
-        created_at=p.created_at,
-        updated_at=p.updated_at,
-        teacher_id=p.teacher_id,
-        teacher_name=teacher_name,
-        stripe_transfer_id=p.stripe_transfer_id,
-        requester_name=requester_name,
-        requester_id=requester_id,
-        teacher_avatar_url=teacher_avatar_url,
-        requester_avatar_url=requester_avatar_url,
-        origin_request_id=p.origin_request_id,
-        is_backer=is_backer,
-        my_rating=my_rating_obj,
-        videos=[VideoReadSimple(id=v.id, url=v.url) for v in p.videos],
-        teacher_verified_languages=teacher_verified_languages
-    )
+class ConversationSummaryRead(BaseModel):
+    id: int
+    request_id: int
+    teacher_id: int
+    student_id: int
+    status: ConversationStatus
+    updated_at: datetime
+    
+    request_title: str
+    other_participant: UserPublicRead
+    last_message_content: Optional[str] = None
+    last_message_created_at: Optional[datetime] = None
+    unread_messages_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+class InboxSummary(BaseModel):
+    conversations: List[ConversationSummaryRead]
+    total_unread_count: int

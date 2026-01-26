@@ -13,8 +13,11 @@ import logging
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
 from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus, RequestBlacklist
-from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
-from pydantic import BaseModel
+from ..schemas import (
+    ProjectRead, ProjectCreate, ProjectUpdateModel, UpdateCreate, UpdateRead,
+    BackerRead, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead,
+    RequestRead, MessageRead, CounterOffer, ProjectResponse # Keep MessageRead if needed for manager, otherwise remove
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,42 +26,79 @@ PLATFORM_FEE_PERCENT = float(os.getenv("PLATFORM_FEE_PERCENT", "0.15"))
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
-class ProjectCreate(BaseModel):
-    title: str
-    description: str
-    language: str
-    level: str
-    funding_goal: int
-    delivery_days: int
-    tags: Optional[str] = None
+# Helper function to create ProjectRead from Project model
+def _create_project_read(project: Project, current_user: Optional[User], session: Session) -> ProjectRead:
+    is_backed_by_user = False
+    if current_user:
+        pledge = session.exec(
+            select(Pledge)
+            .where(Pledge.project_id == project.id)
+            .where(Pledge.user_id == current_user.id)
+            .where(Pledge.status == PledgeStatus.CAPTURED)
+        ).first()
+        if pledge:
+            is_backed_by_user = True
 
-class ProjectUpdateModel(BaseModel):
-    title: Optional[str] = None
-    description: Optional[str] = None
-    language: Optional[str] = None
-    level: Optional[str] = None
-    funding_goal: Optional[int] = None
-    deadline: Optional[datetime] = None
-    delivery_days: Optional[int] = None
-    status: Optional[ProjectStatus] = None
-    tags: Optional[str] = None
+    is_owner = current_user and project.teacher_id == current_user.id
 
-class UpdateCreate(BaseModel):
-    content: str
+    teacher_name = project.teacher.full_name if project.teacher else "Unknown"
+    teacher_avatar_url = project.teacher.avatar_url if project.teacher else None
 
-class UpdateRead(BaseModel):
-    id: int
-    content: str
-    created_at: datetime
-    project_id: int
+    # Fetch average rating and total ratings
+    avg_rating_result = session.exec(
+        select(func.avg(ProjectRating.rating), func.count(ProjectRating.id))
+        .where(ProjectRating.project_id == project.id)
+    ).first()
+    average_rating = avg_rating_result[0] if avg_rating_result and avg_rating_result[0] else None
+    total_ratings = avg_rating_result[1] if avg_rating_result and avg_rating_result[1] else 0
 
-    class Config:
-        from_attributes = True
+    # Check teacher verification status
+    is_teacher_verified = False
+    if project.teacher_id:
+        verification = session.exec(
+            select(TeacherVerification)
+            .where(TeacherVerification.teacher_id == project.teacher_id)
+            .where(TeacherVerification.status == VerificationStatus.APPROVED)
+        ).first()
+        if verification:
+            is_teacher_verified = True
 
-class BackerRead(BaseModel):
-    id: int
-    full_name: str
-    avatar_url: Optional[str] = None
+    origin_request_title = None
+    origin_request_student_name = None
+    if project.origin_request_id and project.request:
+        origin_request_title = project.request.title
+        if project.request.user:
+            origin_request_student_name = project.request.user.full_name
+
+    return ProjectRead(
+        id=project.id,
+        title=project.title,
+        description=project.description,
+        language=project.language,
+        level=project.level,
+        tags=project.tags,
+        funding_goal=project.funding_goal,
+        current_funding=project.current_funding,
+        deadline=project.deadline,
+        delivery_days=project.delivery_days,
+        status=project.status,
+        is_private=project.is_private,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+        teacher_id=project.teacher_id,
+        teacher_name=teacher_name,
+        teacher_avatar_url=teacher_avatar_url,
+        origin_request_id=project.origin_request_id,
+        origin_request_title=origin_request_title,
+        origin_request_student_name=origin_request_student_name,
+        videos=[video.url for video in project.videos],
+        is_backed_by_user=is_backed_by_user,
+        is_owner=is_owner,
+        is_teacher_verified=is_teacher_verified,
+        average_rating=average_rating,
+        total_ratings=total_ratings
+    )
+
 
 def _cancel_project_logic(project: Project, session: Session):
     """
@@ -354,7 +394,7 @@ def confirm_completion(
     if project.status != ProjectStatus.PENDING_CONFIRMATION:
         raise HTTPException(status_code=400, detail="Project is not awaiting confirmation.")
 
-    pledge = session.exec(select(Pledge).where(Pledge.project_id == project_id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first()
+    pledge = session.exec(select(Pledge).where(Pledge.project_id == project.id, Pledge.user_id == current_user.id, Pledge.status == PledgeStatus.CAPTURED)).first()
     if not pledge:
         raise HTTPException(status_code=403, detail="You are not a backer of this project.")
 
