@@ -24,7 +24,7 @@ const RequestList = () => {
   const [availableFilters, setAvailableFilters] = useState({ languages: [] });
   
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [requestToDelete, setRequestToDelete] = useState(null);
+  const [requestToCancel, setRequestToCancel] = useState(null);
 
   const navigate = useNavigate();
   const { addToast } = useToast();
@@ -98,22 +98,22 @@ const RequestList = () => {
     }
   };
 
-  const confirmDeleteRequest = (requestId) => {
-      setRequestToDelete(requestId);
+  const confirmCancelRequest = (requestId) => {
+      setRequestToCancel(requestId);
       setConfirmModalOpen(true);
   };
 
-  const handleDeleteRequest = async () => {
+  const handleCancelRequest = async () => {
       setConfirmModalOpen(false);
-      if (!requestToDelete) return;
+      if (!requestToCancel) return;
       try {
-          await client.delete(`/requests/${requestToDelete}`);
+          await client.post(`/requests/${requestToCancel}/cancel`);
           addToast('Request cancelled', 'success');
           const response = await client.get('/requests/');
           setRequests(response.data);
       } catch (error) {
-          console.error("Failed to delete request", error);
-          addToast(error.response?.data?.detail || "Failed to delete request", 'error');
+          console.error("Failed to cancel request", error);
+          addToast(error.response?.data?.detail || "Failed to cancel request", 'error');
       }
   };
 
@@ -147,21 +147,34 @@ const RequestList = () => {
     </div>
   );
 
+  const filteredRequests = requests.filter(req => {
+    if (req.status === 'cancelled') {
+      return false;
+    }
+    const isOwner = user && user.id === req.user_id;
+    if (isOwner) {
+      return true; // Owners see all their non-cancelled requests
+    }
+    // Logic for non-owners
+    if (req.is_private) {
+      return user && user.id === req.target_teacher_id;
+    }
+    if (req.status === 'open' || req.status === 'negotiating') {
+      return true;
+    }
+    return false;
+  });
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {loading ? <div className="text-center py-10">Loading...</div> : (
+      {loading || !user ? <div className="text-center py-10">Loading...</div> : (
         <>
           {!userHasRequests && renderEmptyState()}
           {userHasRequests && renderRequestHeader()}
           
           <h1 className="text-3xl font-bold text-gray-900 mb-8 mt-8">Community Requests</h1>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {requests.map((req) => {
-              if (user && user.role === 'teacher' && req.target_teacher_id && req.target_teacher_id !== user.id) return null;
-              if (req.status !== 'open' && req.status !== 'negotiating' && (!user || user.id !== req.user_id)) return null;
-              if (req.is_private && (!user || (user.id !== req.user_id && user.id !== req.target_teacher_id))) return null;
-
-              return (
+            {filteredRequests.map((req) => (
               <div key={req.id} className={`bg-white overflow-hidden shadow rounded-lg border ${req.target_teacher_id ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-gray-200'}`}>
                 <div className="px-4 py-5 sm:p-6">
                   <div className="flex justify-between items-start">
@@ -186,12 +199,12 @@ const RequestList = () => {
                           <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
                       </div>
                     )}
-                    {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && <button onClick={() => confirmDeleteRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>}
+                    {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && <button onClick={() => confirmCancelRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>}
                     {user && user.id === req.user_id && req.status === 'accepted' && <span className="text-xs text-green-500 font-medium">Accepted</span>}
                   </div>
                 </div>
               </div>
-            )})}
+            ))}
           </div>
         </>
       )}
@@ -243,7 +256,7 @@ const RequestList = () => {
         </div>
       )}
 
-      <ConfirmationModal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} onConfirm={handleDeleteRequest} title="Cancel Request" message="Are you sure you want to cancel this request? This cannot be undone." confirmText="Cancel Request" isDanger={true} />
+      <ConfirmationModal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} onConfirm={handleCancelRequest} title="Cancel Request" message="Are you sure you want to cancel this request? This cannot be undone." confirmText="Cancel Request" isDanger={true} />
     </div>
   );
 };

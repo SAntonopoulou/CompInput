@@ -8,7 +8,7 @@ import json
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType, OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist
+from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType, OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist, Notification
 from ..security import decode_access_token
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
@@ -620,8 +620,8 @@ async def reject_offer(
 
     return {"status": "offer rejected"}
 
-@router.post("/conversations/{conversation_id}/leave")
-def leave_conversation(
+@router.post("/{conversation_id}/leave")
+async def leave_conversation(
     conversation_id: int,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
@@ -633,11 +633,175 @@ def leave_conversation(
     if current_user.id != conversation.student_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student can leave the conversation.")
     
+    # Fetch the request to get its title for the message and for blacklisting
+    request = session.get(Request, conversation.request_id)
+    if not request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated request not found.")
+
+    # 1. Add a message to the conversation indicating the student has left
+    leave_message_content = f"The student has left this conversation. It is now archived."
+    leave_message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id, # Student is the sender of this message
+        content=leave_message_content,
+        is_read=False, # Teacher hasn't read it yet
+        message_type=MessageType.TEXT
+    )
+    session.add(leave_message)
+    session.flush() # Ensure message gets an ID
+    session.refresh(leave_message)
+
+    # Prepare MessageRead instance for broadcast
+    message_read_instance = MessageRead(
+        id=leave_message.id,
+        conversation_id=leave_message.conversation_id,
+        sender_id=leave_message.sender_id,
+        content=leave_message.content,
+        created_at=leave_message.created_at,
+        is_read=leave_message.is_read,
+        sender_full_name=current_user.full_name,
+        sender_avatar_url=current_user.avatar_url,
+        replied_to_message_id=None,
+        replied_to_message_content=None,
+        replied_to_sender_name=None,
+        message_type=leave_message.message_type,
+        offer_description=None,
+        offer_price=None,
+        offer_status=None
+    )
+
+    # 2. Close the conversation
     conversation.status = ConversationStatus.CLOSED
     session.add(conversation)
+
+    # 3. Blacklist the teacher from the request associated with that conversation
+    blacklist_entry = RequestBlacklist(
+        request_id=conversation.request_id,
+        teacher_id=conversation.teacher_id
+    )
+    session.add(blacklist_entry)
+
+    # 4. Send appropriate notifications to the teacher
+    if manager.is_user_in_conversation(conversation.teacher_id, conversation.id):
+        # Broadcast a single event that includes the message and closure
+        await manager.broadcast_to_conversation(
+            json.dumps({
+                "type": "MESSAGE_AND_CONVERSATION_CLOSED",
+                "message": message_read_instance.model_dump(mode='json'),
+                "conversation_id": conversation.id,
+                "reason": "student_left" # Add a reason to differentiate from request cancellation
+            }),
+            conversation.id
+        )
+    else:
+        # Create a standard notification
+        notification = Notification(
+            user_id=conversation.teacher_id,
+            content=leave_message_content,
+            is_read=False,
+            link=f"/messages/{conversation.id}" # Link to the archived conversation
+        )
+        session.add(notification)
+
+    # 5. Ensure the original request's status remains active (e.g., 'open')
+    # The request status is not changed here, so it remains as it was (e.g., OPEN or NEGOTIATING)
+
     session.commit()
+
+    return {"status": "conversation left", "detail": "Conversation archived and teacher blacklisted from request."}
+
+@router.post("/{conversation_id}/teacher-leave")
+async def teacher_leave_conversation(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
     
-    return {"status": "conversation left"}
+    if current_user.id != conversation.teacher_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the teacher of this conversation can leave it.")
+    
+    # Fetch the request to get its title for the message and for blacklisting
+    request = session.get(Request, conversation.request_id)
+    if not request:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated request not found.")
+
+    # 1. Add a message to the conversation indicating the teacher has left
+    leave_message_content = f"The teacher has left this conversation. It is now archived."
+    leave_message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id, # Teacher is the sender of this message
+        content=leave_message_content,
+        is_read=False, # Student hasn't read it yet
+        message_type=MessageType.TEXT
+    )
+    session.add(leave_message)
+    session.flush() # Ensure message gets an ID
+    session.refresh(leave_message)
+
+    # Prepare MessageRead instance for broadcast
+    message_read_instance = MessageRead(
+        id=leave_message.id,
+        conversation_id=leave_message.conversation_id,
+        sender_id=leave_message.sender_id,
+        content=leave_message.content,
+        created_at=leave_message.created_at,
+        is_read=leave_message.is_read,
+        sender_full_name=current_user.full_name,
+        sender_avatar_url=current_user.avatar_url,
+        replied_to_message_id=None,
+        replied_to_message_content=None,
+        replied_to_sender_name=None,
+        message_type=leave_message.message_type,
+        offer_description=None,
+        offer_price=None,
+        offer_status=None
+    )
+
+    # 2. Close the conversation
+    conversation.status = ConversationStatus.CLOSED
+    session.add(conversation)
+
+    # 3. Blacklist the teacher from the request associated with that conversation
+    # This is already handled by the teacher leaving, so no need to add another blacklist entry here
+    # However, if the teacher leaves, they should be blacklisted from this specific request
+    blacklist_entry = RequestBlacklist(
+        request_id=conversation.request_id,
+        teacher_id=current_user.id
+    )
+    session.add(blacklist_entry)
+
+
+    # 4. Send appropriate notifications to the student
+    if manager.is_user_in_conversation(conversation.student_id, conversation.id):
+        # Broadcast a single event that includes the message and closure
+        await manager.broadcast_to_conversation(
+            json.dumps({
+                "type": "MESSAGE_AND_CONVERSATION_CLOSED",
+                "message": message_read_instance.model_dump(mode='json'),
+                "conversation_id": conversation.id,
+                "reason": "teacher_left" # Add a reason to differentiate
+            }),
+            conversation.id
+        )
+    else:
+        # Create a standard notification
+        notification = Notification(
+            user_id=conversation.student_id,
+            content=leave_message_content,
+            is_read=False,
+            link=f"/messages/{conversation.id}" # Link to the archived conversation
+        )
+        session.add(notification)
+
+    # 5. Ensure the original request's status remains active (e.g., 'open')
+    # The request status is not changed here, so it remains as it was (e.g., OPEN or NEGOTIATING)
+
+    session.commit()
+
+    return {"status": "conversation left", "detail": "Conversation archived and teacher blacklisted from request."}
 
 
 @router.post("/{conversation_id}/close", response_model=ConversationRead)

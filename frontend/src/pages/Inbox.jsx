@@ -101,18 +101,49 @@ const Inbox = () => {
     ws.current.onopen = () => console.log("WebSocket connected");
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      console.log("WebSocket message received:", data); // Add this log
       if (data.type === 'OFFER_ACCEPTED') {
         navigate(`/projects/${data.project_id}`);
       } else if (data.type === 'CONVERSATION_CLOSED') {
         setCurrentConversation(prev => ({ ...prev, status: 'closed' }));
         fetchConversations();
+      } else if (data.type === 'MESSAGE_AND_CONVERSATION_CLOSED') {
+        console.log("MESSAGE_AND_CONVERSATION_CLOSED data.message:", data.message); // Add this log
+        setCurrentConversation(prev => {
+          if (prev && prev.id === data.conversation_id) {
+            // Ensure data.message is an object before adding
+            if (data.message && typeof data.message === 'object') {
+              return { ...prev, messages: [...prev.messages, data.message], status: 'closed' };
+            } else {
+              console.error("Received MESSAGE_AND_CONVERSATION_CLOSED with invalid message:", data.message);
+              return { ...prev, status: 'closed' }; // Close without adding malformed message
+            }
+          }
+          return prev;
+        });
+        let toastMessage = 'Conversation archived.';
+        if (data.reason === 'student_left') {
+          toastMessage = 'Student left conversation. Conversation archived.';
+        } else if (data.reason === 'teacher_left') {
+          toastMessage = 'You have left the conversation. It is now archived.';
+        } else if (data.reason === 'request_cancelled') {
+          toastMessage = 'Request cancelled by student. Conversation archived.';
+        }
+        addToast(toastMessage, 'info');
+        fetchConversations(); // Refresh sidebar to move conversation to archive
       } else {
         setCurrentConversation((prev) => {
           if (prev && prev.id === data.conversation_id) {
             if (ws.current && ws.current.readyState === WebSocket.OPEN) {
               ws.current.send(JSON.stringify({ type: "READ_RECEIPT", message_ids: [data.id] }));
             }
-            return { ...prev, messages: [...prev.messages, data] };
+            // Ensure data is an object before adding as a message
+            if (data && typeof data === 'object') {
+              return { ...prev, messages: [...prev.messages, data] };
+            } else {
+              console.error("Received regular WebSocket message with invalid data:", data);
+              return prev;
+            }
           }
           return prev;
         });
@@ -126,7 +157,7 @@ const Inbox = () => {
     return () => {
       if (ws.current) ws.current.close();
     };
-  }, [conversationId, user, token, fetchUnreadCount, navigate, fetchConversations]);
+  }, [conversationId, user, token, fetchUnreadCount, navigate, fetchConversations, addToast]);
 
   useEffect(() => {
     if (messagesContainerRef.current) {
@@ -186,7 +217,31 @@ const Inbox = () => {
     try {
       await client.post(`/conversations/${currentConversation.id}/leave`);
       addToast('Conversation left', 'success');
-      navigate('/messages');
+      // The WebSocket will handle the display of the message and archiving.
+    } catch (error) {
+      addToast('Failed to leave conversation', 'error');
+    } finally {
+      setConfirmModalOpen(false);
+    }
+  };
+
+  const handleTeacherLeaveConversation = async () => {
+    if (!currentConversation || !user || user.id !== currentConversation.teacher_id) return;
+    setModalConfig({
+      title: "Leave Conversation",
+      message: "Are you sure you want to leave this conversation? This will remove the request from your list and archive this chat.",
+      onConfirm: executeTeacherLeaveConversation,
+      isDanger: true,
+      confirmText: "Leave"
+    });
+    setConfirmModalOpen(true);
+  };
+
+  const executeTeacherLeaveConversation = async () => {
+    try {
+      await client.post(`/conversations/${currentConversation.id}/teacher-leave`);
+      addToast('You have left the conversation.', 'success');
+      // The WebSocket will handle the display of the message and archiving.
     } catch (error) {
       addToast('Failed to leave conversation', 'error');
     } finally {
@@ -264,7 +319,9 @@ const Inbox = () => {
 
   if (!user) return <div className="p-10 text-center">Loading user data...</div>;
 
-  const hasPendingOffer = currentConversation?.messages.some(m => m.message_type === 'offer' && m.offer_status === 'pending');
+  const hasPendingOffer = currentConversation?.messages
+    ?.filter(m => m && typeof m === 'object') // Filter out null/undefined/non-object items
+    .some(m => m.message_type === 'offer' && m.offer_status === 'pending');
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -286,9 +343,8 @@ const Inbox = () => {
                 <div className="flex-1">
                   <div className="flex justify-between items-center">
                     <p className="text-sm font-medium text-gray-900">{conv.other_participant.full_name}</p>
-                    <p className="text-xs text-gray-500">{formatDateTime(conv.updated_at)}</p>
+                    <p className="text-sm text-gray-600 truncate">{conv.request_title}</p>
                   </div>
-                  <p className="text-sm text-gray-600 truncate">{conv.request_title}</p>
                   {conv.unread_messages_count > 0 && <span className="text-xs font-semibold text-indigo-600">{conv.unread_messages_count} unread</span>}
                 </div>
               </div>
@@ -308,6 +364,7 @@ const Inbox = () => {
                 </div>
                 <div className="flex space-x-2">
                   {currentConversation.status === 'open' && user.id === currentConversation.student_id && <button onClick={handleLeaveConversation} className="bg-gray-500 hover:bg-gray-600 text-white text-sm font-medium py-2 px-4 rounded-md">Leave Conversation</button>}
+                  {currentConversation.status === 'open' && user.id === currentConversation.teacher_id && <button onClick={handleTeacherLeaveConversation} className="bg-gray-500 hover:bg-gray-600 text-white text-sm font-medium py-2 px-4 rounded-md">Leave Conversation</button>}
                 </div>
               </div>
               <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0">

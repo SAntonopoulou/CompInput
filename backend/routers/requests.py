@@ -1,5 +1,6 @@
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, date
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
@@ -8,9 +9,16 @@ from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist
+from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist, Conversation, ConversationStatus, Message, MessageType
+from .conversations import manager, MessageRead 
 
 router = APIRouter(prefix="/requests", tags=["requests"])
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError ("Type %s not serializable" % type(obj))
 
 class RequestCreate(BaseModel):
     title: str
@@ -101,11 +109,29 @@ def list_requests(
     """
     query = select(Request).options(selectinload(Request.user))
     
-    if current_user and current_user.role == UserRole.TEACHER:
+    # Exclude cancelled requests by default
+    query = query.where(Request.status != RequestStatus.CANCELLED)
+
+    # Base conditions for all users
+    base_conditions = [
+        Request.user_id == current_user.id, # User can always see their own requests
+        Request.is_private == False # Public requests
+    ]
+
+    if current_user.role == UserRole.TEACHER:
+        # Teachers can see requests targeted to them, even if private
+        base_conditions.append(Request.target_teacher_id == current_user.id)
         # Exclude blacklisted requests for this teacher
         blacklist_sub = select(RequestBlacklist.request_id).where(RequestBlacklist.teacher_id == current_user.id)
         query = query.where(Request.id.notin_(blacklist_sub))
     
+    # Combine base conditions with OR
+    query = query.where(
+        (Request.user_id == current_user.id) | # User can always see their own requests
+        (Request.is_private == False) | # Public requests
+        (current_user.role == UserRole.TEACHER and Request.target_teacher_id == current_user.id) # Teachers see targeted private requests
+    )
+
     if language:
         query = query.where(Request.language == language)
     if level:
@@ -136,14 +162,16 @@ def list_requests(
         
     return results
 
-@router.delete("/{request_id}")
-def delete_request(
+@router.post("/{request_id}/cancel")
+async def cancel_request(
     request_id: int,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
     """
-    Delete a request. Only the owner or an admin can delete it.
+    Cancel a request. Only the owner or an admin can cancel it.
+    This action is not a hard delete. It sets the request status to CANCELLED
+    and closes associated conversations, which moves them to the archive.
     """
     request = session.get(Request, request_id)
     if not request:
@@ -152,18 +180,98 @@ def delete_request(
     if request.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to delete this request",
+            detail="Not authorized to cancel this request",
         )
     
-    if request.status not in [RequestStatus.OPEN, RequestStatus.NEGOTIATING, RequestStatus.REJECTED]:
+    if request.status not in [RequestStatus.OPEN, RequestStatus.NEGOTIATING]:
          raise HTTPException(
             status_code=400,
-            detail="Cannot delete a request that has been accepted",
+            detail=f"Cannot cancel a request with status '{request.status}'.",
         )
+    
+    request.status = RequestStatus.CANCELLED
+    session.add(request)
+
+    # Find and close associated conversations
+    conversations = session.exec(select(Conversation).where(Conversation.request_id == request_id)).all()
+    
+    notifications_to_add = []
+    
+    for conv in conversations:
+        # Check if teacher is blacklisted for this request
+        is_blacklisted = session.exec(
+            select(RequestBlacklist)
+            .where(RequestBlacklist.request_id == request_id)
+            .where(RequestBlacklist.teacher_id == conv.teacher_id)
+        ).first()
+
+        if is_blacklisted:
+            # If blacklisted, just close the conversation and skip notifications
+            conv.status = ConversationStatus.CLOSED
+            session.add(conv)
+            continue # Skip to the next conversation
+
+        # 1. Add cancellation message to the conversation
+        cancellation_message_content = f"The student has cancelled the request '{request.title}'. This conversation is now archived."
+        cancellation_message = Message(
+            conversation_id=conv.id,
+            sender_id=current_user.id, # Student is the sender of this message
+            content=cancellation_message_content,
+            is_read=False, # Teacher hasn't read it yet
+            message_type=MessageType.TEXT
+        )
+        session.add(cancellation_message)
+        session.flush() # Ensure message gets an ID
+        session.refresh(cancellation_message)
+
+        # Prepare MessageRead instance for broadcast
+        message_read_instance = MessageRead(
+            id=cancellation_message.id,
+            conversation_id=cancellation_message.conversation_id,
+            sender_id=cancellation_message.sender_id,
+            content=cancellation_message.content,
+            created_at=cancellation_message.created_at,
+            is_read=cancellation_message.is_read,
+            sender_full_name=current_user.full_name,
+            sender_avatar_url=current_user.avatar_url,
+            replied_to_message_id=None,
+            replied_to_message_content=None,
+            replied_to_sender_name=None,
+            message_type=cancellation_message.message_type,
+            offer_description=None,
+            offer_price=None,
+            offer_status=None
+        )
+
+        # 2. Notify the teacher
+        if manager.is_user_in_conversation(conv.teacher_id, conv.id):
+            # First, broadcast the new message as a regular message
+            await manager.broadcast_to_conversation(
+                message_read_instance.model_dump_json(), # This is already a JSON string
+                conv.id
+            )
+            # Then, broadcast the conversation closure event
+            await manager.broadcast_to_conversation(
+                json.dumps({"type": "MESSAGE_AND_CONVERSATION_CLOSED", "conversation_id": conv.id, "reason": "request_cancelled"}),
+                conv.id
+            )
+        else:
+            # Create a standard notification
+            notification = Notification(
+                user_id=conv.teacher_id,
+                content=cancellation_message_content, # Use the same content as the message
+                is_read=False,
+                link=f"/messages/{conv.id}" # Link to the archived conversation
+            )
+            notifications_to_add.append(notification)
         
-    session.delete(request)
+        # 3. Close the conversation in the database
+        conv.status = ConversationStatus.CLOSED
+        session.add(conv)
+            
+    session.add_all(notifications_to_add) # Add all collected notifications
     session.commit()
-    return {"ok": True}
+    return {"ok": True, "detail": "Request cancelled and conversations archived."}
 
 # @router.post("/{request_id}/convert", response_model=ProjectResponse)
 # def convert_request_to_project(

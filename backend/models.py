@@ -29,6 +29,7 @@ class RequestStatus(str, Enum):
     NEGOTIATING = "negotiating"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+    CANCELLED = "cancelled"
 
 class VerificationStatus(str, Enum):
     PENDING = "pending"
@@ -243,7 +244,7 @@ class Conversation(SQLModel, table=True):
     request: Optional["Request"] = Relationship(back_populates="conversations")
     teacher: Optional["User"] = Relationship(back_populates="conversations_as_teacher", sa_relationship_kwargs={"foreign_keys": "Conversation.teacher_id"})
     student: Optional["User"] = Relationship(back_populates="conversations_as_student", sa_relationship_kwargs={"foreign_keys": "Conversation.student_id"})
-    messages: List["Message"] = Relationship(back_populates="conversation", sa_relationship_kwargs={"order_by": "Message.created_at"})
+    messages: List["Message"] = Relationship(back_populates="conversation", sa_relationship_kwargs={"cascade": "all, delete-orphan", "order_by": "Message.created_at"})
 
 class Message(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
