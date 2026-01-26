@@ -158,66 +158,89 @@ const Dashboard = () => {
               No active projects. Create one to get started!
             </li>
           ) : (
-            projects.map((project) => (
-              <li key={project.id}>
-                <div className="px-4 py-4 sm:px-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex flex-col">
-                        <Link to={`/projects/${project.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 truncate">
-                          {project.title}
-                        </Link>
-                        <p className="text-xs text-gray-500">Status: {project.status}</p>
-                    </div>
-                    <div className="ml-2 flex-shrink-0 flex space-x-2">
-                      {project.status === 'draft' && (
-                        <Link
-                          to={`/teacher/projects/${project.id}/edit`}
-                          className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 hover:bg-gray-200"
-                        >
-                          Edit
-                        </Link>
-                      )}
-                      
-                      {project.status === 'successful' && (
-                        <>
-                          <button
-                            onClick={() => handleLinkVideo(project.id)}
-                            className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200"
-                          >
-                            Link Video
-                          </button>
-                          <button
-                            onClick={() => confirmMarkAsReady(project.id)}
-                            className="px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800 hover:bg-green-200"
-                          >
-                            Mark as Ready
-                          </button>
-                        </>
-                      )}
+            projects.map((project) => {
+              const videoCount = project.videos ? project.videos.length : 0;
+              let isMarkAsReadyDisabled = false;
+              let markAsReadyTooltip = "";
 
-                      {project.status !== 'completed' && project.status !== 'cancelled' && (
-                          <button
-                            onClick={() => confirmCancelProject(project.id)}
-                            className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200"
+              if (project.is_series) {
+                if (project.num_videos === null || videoCount !== project.num_videos) {
+                  isMarkAsReadyDisabled = true;
+                  markAsReadyTooltip = `For this series project, exactly ${project.num_videos || 'the specified'} videos must be uploaded. Currently ${videoCount} uploaded.`;
+                }
+              } else {
+                if (videoCount !== 1) {
+                  isMarkAsReadyDisabled = true;
+                  markAsReadyTooltip = `For a single video project, exactly 1 video must be uploaded. Currently ${videoCount} uploaded.`;
+                }
+              }
+
+              return (
+                <li key={project.id}>
+                  <div className="px-4 py-4 sm:px-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex flex-col">
+                          <Link to={`/projects/${project.id}`} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 truncate">
+                            {project.title}
+                          </Link>
+                          <p className="text-xs text-gray-500">Status: {project.status}</p>
+                          {project.is_series && (
+                            <p className="text-xs text-gray-500">Videos uploaded: {videoCount} / {project.num_videos}</p>
+                          )}
+                      </div>
+                      <div className="ml-2 flex-shrink-0 flex space-x-2">
+                        {project.status === 'draft' && (
+                          <Link
+                            to={`/teacher/projects/${project.id}/edit`}
+                            className="px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800 hover:bg-gray-200"
                           >
-                              Cancel
-                          </button>
-                      )}
+                            Edit
+                          </Link>
+                        )}
+                        
+                        {project.status === 'successful' && (
+                          <>
+                            <button
+                              onClick={() => handleLinkVideo(project.id)}
+                              className="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 hover:bg-blue-200"
+                            >
+                              Link Video
+                            </button>
+                            <button
+                              onClick={() => confirmMarkAsReady(project.id)}
+                              className={`px-2 py-1 text-xs font-semibold rounded-full ${isMarkAsReadyDisabled ? 'bg-gray-300 text-gray-600 cursor-not-allowed' : 'bg-green-100 text-green-800 hover:bg-green-200'}`}
+                              disabled={isMarkAsReadyDisabled}
+                              title={markAsReadyTooltip}
+                            >
+                              Mark as Ready
+                            </button>
+                          </>
+                        )}
+
+                        {project.status !== 'completed' && project.status !== 'cancelled' && (
+                            <button
+                              onClick={() => confirmCancelProject(project.id)}
+                              className="px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800 hover:bg-red-200"
+                            >
+                                Cancel
+                            </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-2 sm:flex sm:justify-between">
+                      <div className="sm:flex">
+                        <p className="flex items-center text-sm text-gray-500">
+                          Goal: €{(project.funding_goal / 100).toFixed(2)}
+                        </p>
+                        <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
+                          Raised: €{(project.current_funding / 100).toFixed(2)}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="mt-2 sm:flex sm:justify-between">
-                    <div className="sm:flex">
-                      <p className="flex items-center text-sm text-gray-500">
-                        Goal: €{(project.funding_goal / 100).toFixed(2)}
-                      </p>
-                      <p className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6">
-                        Raised: €{(project.current_funding / 100).toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            ))
+                </li>
+              );
+            })
           )}
         </ul>
       </div>

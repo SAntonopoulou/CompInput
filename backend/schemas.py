@@ -12,6 +12,8 @@ class RequestCreate(BaseModel):
     budget: int = 0
     target_teacher_id: Optional[int] = None
     is_private: bool = False
+    is_series: bool = False
+    num_videos: Optional[int] = None
 
 class RequestRead(BaseModel):
     id: int
@@ -32,6 +34,8 @@ class RequestRead(BaseModel):
     project_description: Optional[str] = None
     project_funding_goal: Optional[int] = None
     tags: Optional[str] = None # Added tags field
+    is_series: bool = False
+    num_videos: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -44,6 +48,9 @@ class ProjectCreate(BaseModel):
     funding_goal: int
     delivery_days: int
     tags: Optional[str] = None
+    is_series: bool = False
+    num_videos: Optional[int] = None
+    price_per_video: Optional[int] = None
 
 class ProjectUpdateModel(BaseModel):
     title: Optional[str] = None
@@ -110,6 +117,9 @@ class ProjectRead(BaseModel):
     is_teacher_verified: bool = False
     average_rating: Optional[float] = None
     total_ratings: int = 0
+    is_series: bool = False
+    num_videos: Optional[int] = None
+    price_per_video: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -149,6 +159,9 @@ class OfferCreate(BaseModel):
     language: str
     level: str
     tags: Optional[str] = None
+    is_series: Optional[bool] = None
+    num_videos: Optional[int] = None
+    price_per_video: Optional[int] = None
 
 class DemoVideoUpdate(BaseModel):
     url: str
@@ -182,6 +195,9 @@ class MessageRead(BaseModel):
     offer_language: Optional[str] = None
     offer_level: Optional[str] = None
     offer_tags: Optional[str] = None
+    offer_is_series: Optional[bool] = None
+    offer_num_videos: Optional[int] = None
+    offer_price_per_video: Optional[int] = None
 
     class Config:
         from_attributes = True

@@ -133,6 +133,11 @@ class Project(SQLModel, table=True):
     updates: List["ProjectUpdate"] = Relationship(back_populates="project")
     ratings: List["ProjectRating"] = Relationship(back_populates="project")
 
+    # New fields for multi-video projects
+    is_series: bool = Field(default=False)
+    num_videos: Optional[int] = None
+    price_per_video: Optional[int] = None
+
 class ProjectUpdate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     content: str
@@ -218,6 +223,10 @@ class Request(SQLModel, table=True):
     target_teacher: Optional[User] = Relationship(sa_relationship_kwargs={"foreign_keys": "Request.target_teacher_id"})
     conversations: List["Conversation"] = Relationship(back_populates="request")
 
+    # New fields for multi-video requests
+    is_series: bool = Field(default=False)
+    num_videos: Optional[int] = None
+
 class Notification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     content: str
@@ -266,6 +275,11 @@ class Message(SQLModel, table=True):
     offer_language: Optional[str] = None
     offer_level: Optional[str] = None
     offer_tags: Optional[str] = None
+
+    # New fields for multi-video offers
+    offer_is_series: Optional[bool] = None
+    offer_num_videos: Optional[int] = None
+    offer_price_per_video: Optional[int] = None
 
     conversation: Optional["Conversation"] = Relationship(back_populates="messages")
     sender: Optional["User"] = Relationship(back_populates="sent_messages")

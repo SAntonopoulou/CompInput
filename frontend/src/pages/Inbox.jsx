@@ -31,12 +31,21 @@ const Inbox = () => {
   const [offerLanguage, setOfferLanguage] = useState('');
   const [offerLevel, setOfferLevel] = useState('');
   const [offerTags, setOfferTags] = useState('');
+  const [offerIsSeries, setOfferIsSeries] = useState(false);
+  const [offerNumVideos, setOfferNumVideos] = useState(1);
+  const [offerPricePerVideo, setOfferPricePerVideo] = useState(0);
 
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [modalConfig, setModalConfig] = useState({});
 
   const messagesContainerRef = useRef(null);
   const ws = useRef(null);
+
+  useEffect(() => {
+    if (offerIsSeries && offerPricePerVideo > 0 && offerNumVideos > 0) {
+      setOfferPrice(offerPricePerVideo * offerNumVideos);
+    }
+  }, [offerIsSeries, offerPricePerVideo, offerNumVideos]);
 
   // Helper to get embeddable URL
   const getEmbedUrl = (url) => {
@@ -279,14 +288,18 @@ const Inbox = () => {
       return;
     }
     try {
-      await client.post(`/conversations/${currentConversation.id}/offer`, {
+      const payload = {
         title: offerTitle,
         offer_description: offerDescription,
         offer_price: Math.round(offerPrice * 100),
         language: offerLanguage,
         level: offerLevel,
         tags: offerTags,
-      });
+        is_series: offerIsSeries,
+        num_videos: offerIsSeries ? offerNumVideos : null,
+        price_per_video: offerIsSeries ? Math.round(offerPricePerVideo * 100) : null,
+      };
+      await client.post(`/conversations/${currentConversation.id}/offer`, payload);
       addToast('Offer sent!', 'success');
       setShowOfferModal(false);
     } catch (error) {
@@ -358,6 +371,14 @@ const Inbox = () => {
           <p className="font-semibold text-gray-600">Description</p>
           <p className="text-gray-900">{message.offer_description}</p>
         </div>
+        {message.offer_is_series && (
+          <div className="bg-indigo-50 p-3 rounded-md">
+            <p className="font-bold text-indigo-800">This is a series of {message.offer_num_videos} videos.</p>
+            {message.offer_price_per_video && (
+              <p className="text-sm text-indigo-700">Price per video: {formatCurrency(message.offer_price_per_video)}</p>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <p className="font-semibold text-gray-600">Language</p>
@@ -379,7 +400,7 @@ const Inbox = () => {
           </div>
         )}
         <div className="pt-3 border-t border-gray-200">
-          <p className="font-semibold text-gray-600">Price</p>
+          <p className="font-semibold text-gray-600">Total Price</p>
           <p className="text-2xl font-bold text-indigo-600">{formatCurrency(message.offer_price)}</p>
         </div>
       </div>
@@ -491,6 +512,8 @@ const Inbox = () => {
                           setOfferLanguage(currentConversation.request.language);
                           setOfferLevel(currentConversation.request.level);
                           setOfferTags(currentConversation.request.tags || '');
+                          setOfferIsSeries(currentConversation.request.is_series || false);
+                          setOfferNumVideos(currentConversation.request.num_videos || 1);
                         }
                       }} className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-3 rounded-l-md flex items-center justify-center mr-1" disabled={hasPendingOffer}><FaDollarSign className="mr-1" /> Offer</button>
                       <button type="button" onClick={handleRequestDemoVideo} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 flex items-center justify-center mr-1" disabled={currentConversation.demo_video_requested}><FaFileVideo className="mr-1" /> Demo</button>
@@ -504,7 +527,7 @@ const Inbox = () => {
           ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a conversation to start chatting.</div>}
         </div>
       </div>
-      {showOfferModal && <div className="fixed z-10 inset-0 overflow-y-auto"><div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div className="fixed inset-0 transition-opacity" aria-hidden="true"><div className="absolute inset-0 bg-gray-500 opacity-75"></div></div><span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Make Project Offer</h3><div className="space-y-4"><div><label htmlFor="offerTitle" className="block text-sm font-medium text-gray-700">Project Title</label><input type="text" id="offerTitle" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} /></div><div><label htmlFor="offerDescription" className="block text-sm font-medium text-gray-700">Project Description</label><textarea id="offerDescription" rows="3" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerDescription} onChange={(e) => setOfferDescription(e.target.value)}></textarea></div><div className="grid grid-cols-2 gap-4"><div><label htmlFor="offerLanguage" className="block text-sm font-medium text-gray-700">Language</label><input type="text" id="offerLanguage" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLanguage} onChange={(e) => setOfferLanguage(e.target.value)} /></div><div><label htmlFor="offerLevel" className="block text-sm font-medium text-gray-700">Level</label><input type="text" id="offerLevel" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLevel} onChange={(e) => setOfferLevel(e.target.value)} /></div></div><div><label htmlFor="offerTags" className="block text-sm font-medium text-gray-700">Tags (comma-separated)</label><input type="text" id="offerTags" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTags} onChange={(e) => setOfferTags(e.target.value)} /></div><div><label htmlFor="offerPrice" className="block text-sm font-medium text-gray-700">Offer Price (EUR)</label><input type="number" id="offerPrice" min="0" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerPrice} onChange={(e) => setOfferPrice(parseFloat(e.target.value))} /></div></div></div><div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" onClick={handleMakeOffer} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Send Offer</button><button type="button" onClick={() => setShowOfferModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button></div></div></div></div>}
+      {showOfferModal && <div className="fixed z-10 inset-0 overflow-y-auto"><div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0"><div className="fixed inset-0 transition-opacity" aria-hidden="true"><div className="absolute inset-0 bg-gray-500 opacity-75"></div></div><span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span><div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full"><div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4"><h3 className="text-lg leading-6 font-medium text-gray-900 mb-4">Make Project Offer</h3><div className="space-y-4"><div><label htmlFor="offerTitle" className="block text-sm font-medium text-gray-700">Project Title</label><input type="text" id="offerTitle" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTitle} onChange={(e) => setOfferTitle(e.target.value)} /></div><div><label htmlFor="offerDescription" className="block text-sm font-medium text-gray-700">Project Description</label><textarea id="offerDescription" rows="3" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerDescription} onChange={(e) => setOfferDescription(e.target.value)}></textarea></div><div className="grid grid-cols-2 gap-4"><div><label htmlFor="offerLanguage" className="block text-sm font-medium text-gray-700">Language</label><input type="text" id="offerLanguage" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLanguage} onChange={(e) => setOfferLanguage(e.target.value)} /></div><div><label htmlFor="offerLevel" className="block text-sm font-medium text-gray-700">Level</label><input type="text" id="offerLevel" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerLevel} onChange={(e) => setOfferLevel(e.target.value)} /></div></div><div><label htmlFor="offerTags" className="block text-sm font-medium text-gray-700">Tags (comma-separated)</label><input type="text" id="offerTags" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerTags} onChange={(e) => setOfferTags(e.target.value)} /></div><div className="flex items-center"><input id="offerIsSeries" type="checkbox" className="h-4 w-4 text-indigo-600 border-gray-300 rounded" checked={offerIsSeries} onChange={(e) => setOfferIsSeries(e.target.checked)} /><label htmlFor="offerIsSeries" className="ml-2 block text-sm text-gray-900">Is this a series?</label></div>{offerIsSeries && (<div className="grid grid-cols-2 gap-4"><div><label htmlFor="offerNumVideos" className="block text-sm font-medium text-gray-700">Number of Videos</label><input type="number" id="offerNumVideos" min="1" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerNumVideos} onChange={(e) => setOfferNumVideos(parseInt(e.target.value, 10))} /></div><div><label htmlFor="offerPricePerVideo" className="block text-sm font-medium text-gray-700">Price Per Video (EUR)</label><input type="number" id="offerPricePerVideo" min="0" step="0.01" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerPricePerVideo} onChange={(e) => setOfferPricePerVideo(parseFloat(e.target.value))} /></div></div>)}<div><label htmlFor="offerPrice" className="block text-sm font-medium text-gray-700">Total Offer Price (EUR)</label><input type="number" id="offerPrice" min="0" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={offerPrice} onChange={(e) => setOfferPrice(parseFloat(e.target.value))} disabled={offerIsSeries} /></div></div></div><div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse"><button type="button" onClick={handleMakeOffer} className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm">Send Offer</button><button type="button" onClick={() => setShowOfferModal(false)} className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">Cancel</button></div></div></div></div>}
       <ConfirmationModal isOpen={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} onConfirm={modalConfig.onConfirm} title={modalConfig.title} message={modalConfig.message} confirmText={modalConfig.confirmText} isDanger={modalConfig.isDanger} />
     </div>
   );

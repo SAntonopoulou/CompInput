@@ -96,7 +96,10 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         is_owner=is_owner,
         is_teacher_verified=is_teacher_verified,
         average_rating=average_rating,
-        total_ratings=total_ratings
+        total_ratings=total_ratings,
+        is_series=project.is_series,
+        num_videos=project.num_videos,
+        price_per_video=project.price_per_video
     )
 
 
@@ -202,7 +205,20 @@ def create_project(
     if current_user.role != UserRole.TEACHER and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only teachers can create projects")
     
-    project = Project(**project_in.dict(), teacher_id=current_user.id, status=ProjectStatus.FUNDING)
+    funding_goal = project_in.funding_goal
+    if project_in.is_series and project_in.price_per_video and project_in.num_videos and project_in.num_videos > 0:
+        funding_goal = project_in.price_per_video * project_in.num_videos
+    elif project_in.is_series and (project_in.price_per_video is None or project_in.num_videos is None or project_in.num_videos <= 0):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="For series projects, price_per_video and num_videos must be provided and num_videos must be greater than 0.")
+    elif not project_in.is_series and (project_in.price_per_video is not None or project_in.num_videos is not None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="price_per_video and num_videos should not be provided for non-series projects.")
+
+    project = Project(
+        **project_in.dict(exclude={"funding_goal"}), 
+        funding_goal=funding_goal, 
+        teacher_id=current_user.id, 
+        status=ProjectStatus.FUNDING
+    )
     session.add(project)
     session.commit()
     session.refresh(project)
@@ -358,13 +374,32 @@ def complete_project(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session)
 ):
-    project = session.get(Project, project_id)
+    project = session.exec(
+        select(Project)
+        .where(Project.id == project_id)
+        .options(selectinload(Project.videos))
+    ).first()
+
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if project.teacher_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the project owner can complete the project")
     if project.status != ProjectStatus.SUCCESSFUL:
         raise HTTPException(status_code=400, detail="Project must be SUCCESSFUL to be marked for completion")
+
+    # Video count validation
+    if project.is_series:
+        if project.num_videos is None or len(project.videos) != project.num_videos:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"For a series project, exactly {project.num_videos} videos must be uploaded. Currently {len(project.videos)}."
+            )
+    else:
+        if len(project.videos) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="For a single video project, exactly 1 video must be uploaded."
+            )
 
     project.status = ProjectStatus.PENDING_CONFIRMATION
     session.add(project)

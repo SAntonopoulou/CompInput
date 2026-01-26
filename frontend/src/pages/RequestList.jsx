@@ -19,7 +19,9 @@ const RequestList = () => {
     level: '',
     budget: 0,
     target_teacher_id: null,
-    is_private: false
+    is_private: false,
+    is_series: false,
+    num_videos: null
   });
   const [teacherSearch, setTeacherSearch] = useState('');
   const [teacherResults, setTeacherResults] = useState([]);
@@ -96,10 +98,14 @@ const RequestList = () => {
   const handleCreateRequest = async (e) => {
     e.preventDefault();
     try {
-      const payload = { ...newRequest, budget: Math.round(newRequest.budget * 100) };
+      const payload = { 
+        ...newRequest, 
+        budget: Math.round(newRequest.budget * 100),
+        num_videos: newRequest.is_series ? newRequest.num_videos : null,
+      };
       await client.post('/requests/', payload);
       setShowModal(false);
-      setNewRequest({ title: '', description: '', language: '', level: '', budget: 0, target_teacher_id: null, is_private: false });
+      setNewRequest({ title: '', description: '', language: '', level: '', budget: 0, target_teacher_id: null, is_private: false, is_series: false, num_videos: null });
       setSelectedTeacherName('');
       setTeacherSearch('');
       addToast('Request created successfully!', 'success');
@@ -191,6 +197,13 @@ const RequestList = () => {
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{req.language}</span>
             <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{req.level}</span>
           </div>
+          {req.is_series && (
+            <div className="mb-2">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                Series: {req.num_videos} videos
+              </span>
+            </div>
+          )}
           <p className="text-sm text-gray-500 mb-4 line-clamp-3">{description}</p>
           <div className="mb-4">
               <p className="text-sm font-medium text-gray-900">Budget: {formatCurrency(budget)}</p>
@@ -272,6 +285,16 @@ const RequestList = () => {
                         <datalist id="levels">{allLevels.map(lvl => <option key={lvl} value={lvl} />)}</datalist>
                       </div>
                     </div>
+                    <div className="flex items-center">
+                      <input id="is_series" name="is_series" type="checkbox" className="h-4 w-4 text-indigo-600 border-gray-300 rounded" checked={newRequest.is_series} onChange={(e) => setNewRequest({...newRequest, is_series: e.target.checked, num_videos: e.target.checked ? 1 : null})} />
+                      <label htmlFor="is_series" className="ml-2 block text-sm text-gray-900">Is this a series?</label>
+                    </div>
+                    {newRequest.is_series && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Number of Videos</label>
+                        <input type="number" min="1" required className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={newRequest.num_videos || ''} onChange={(e) => setNewRequest({...newRequest, num_videos: parseInt(e.target.value, 10)})} />
+                      </div>
+                    )}
                     <div><label className="block text-sm font-medium text-gray-700">Budget (EUR)</label><input type="number" min="0" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={newRequest.budget} onChange={(e) => setNewRequest({...newRequest, budget: e.target.value})} /></div>
                     <div className="relative">
                         <label className="block text-sm font-medium text-gray-700">Target Teacher (Optional)</label>

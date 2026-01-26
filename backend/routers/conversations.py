@@ -115,7 +115,10 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
             offer_title=msg.offer_title,
             offer_language=msg.offer_language,
             offer_level=msg.offer_level,
-            offer_tags=msg.offer_tags
+            offer_tags=msg.offer_tags,
+            offer_is_series=msg.offer_is_series,
+            offer_num_videos=msg.offer_num_videos,
+            offer_price_per_video=msg.offer_price_per_video
         ))
 
     # Manually construct RequestRead to ensure user_name is present
@@ -413,7 +416,10 @@ async def send_message(
         offer_title=message.offer_title,
         offer_language=message.offer_language,
         offer_level=message.offer_level,
-        offer_tags=message.offer_tags
+        offer_tags=message.offer_tags,
+        offer_is_series=message.offer_is_series,
+        offer_num_videos=message.offer_num_videos,
+        offer_price_per_video=message.offer_price_per_video
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -452,18 +458,25 @@ async def make_offer(
     if conversation.status == ConversationStatus.CLOSED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot make an offer in a closed conversation.")
 
+    offer_price = offer_in.offer_price
+    if offer_in.is_series and offer_in.price_per_video and offer_in.num_videos and offer_in.num_videos > 0:
+        offer_price = offer_in.price_per_video * offer_in.num_videos
+
     message = Message(
         conversation_id=conversation.id,
         sender_id=current_user.id,
         content=f"Offer: {offer_in.offer_description}",
         message_type=MessageType.OFFER,
         offer_description=offer_in.offer_description,
-        offer_price=offer_in.offer_price,
+        offer_price=offer_price,
         offer_status=OfferStatus.PENDING,
         offer_title=offer_in.title,
         offer_language=offer_in.language,
         offer_level=offer_in.level,
-        offer_tags=offer_in.tags
+        offer_tags=offer_in.tags,
+        offer_is_series=offer_in.is_series,
+        offer_num_videos=offer_in.num_videos,
+        offer_price_per_video=offer_in.price_per_video
     )
     session.add(message)
     conversation.updated_at = datetime.utcnow()
@@ -488,7 +501,10 @@ async def make_offer(
         offer_title=message.offer_title,
         offer_language=message.offer_language,
         offer_level=message.offer_level,
-        offer_tags=message.offer_tags
+        offer_tags=message.offer_tags,
+        offer_is_series=message.offer_is_series,
+        offer_num_videos=message.offer_num_videos,
+        offer_price_per_video=message.offer_price_per_video
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -528,7 +544,10 @@ async def accept_offer(
         funding_goal=offer_message.offer_price,
         teacher_id=conversation.teacher_id,
         origin_request_id=request.id,
-        status=ProjectStatus.FUNDING
+        status=ProjectStatus.FUNDING,
+        is_series=offer_message.offer_is_series,
+        num_videos=offer_message.offer_num_videos,
+        price_per_video=offer_message.offer_price_per_video
     )
     session.add(new_project)
     session.flush() # To get the new_project.id
@@ -634,7 +653,10 @@ async def leave_conversation(
         offer_title=None,
         offer_language=None,
         offer_level=None,
-        offer_tags=None
+        offer_tags=None,
+        offer_is_series=None,
+        offer_num_videos=None,
+        offer_price_per_video=None
     )
 
     # 2. Close the conversation
@@ -728,7 +750,10 @@ async def teacher_leave_conversation(
         offer_title=None,
         offer_language=None,
         offer_level=None,
-        offer_tags=None
+        offer_tags=None,
+        offer_is_series=None,
+        offer_num_videos=None,
+        offer_price_per_video=None
     )
 
     # 2. Close the conversation
@@ -843,7 +868,10 @@ async def request_demo_video(
         offer_title=None,
         offer_language=None,
         offer_level=None,
-        offer_tags=None
+        offer_tags=None,
+        offer_is_series=None,
+        offer_num_videos=None,
+        offer_price_per_video=None
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -899,7 +927,10 @@ async def update_demo_video_url(
         offer_title=None,
         offer_language=None,
         offer_level=None,
-        offer_tags=None
+        offer_tags=None,
+        offer_is_series=None,
+        offer_num_videos=None,
+        offer_price_per_video=None
     )
 
     await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
@@ -972,7 +1003,7 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: int, token: 
 @router.websocket("/ws")
 async def websocket_global_notifications_endpoint(websocket: WebSocket, token: str = Query(...), session: Session = Depends(get_session)):
     user = await get_user_from_token(token, session)
-    if not token:
+    if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid token")
         return
 
