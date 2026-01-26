@@ -7,6 +7,7 @@ import RespondToReview from '../components/RespondToReview';
 import { useToast } from '../context/ToastContext';
 import ProjectCard from '../components/ProjectCard';
 import VideoPlayer from '../components/VideoPlayer';
+import VerifiedBadge from '../components/VerifiedBadge'; // Import the new component
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -138,7 +139,7 @@ const ProjectDetail = () => {
   const formatCurrency = (amountInCents) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(amountInCents / 100);
   const isOwner = currentUser && currentUser.id === project.teacher_id;
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
-  const canRate = project.is_backer && project.status === 'completed';
+  const canRate = project.is_backed_by_user && project.status === 'completed';
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -151,7 +152,10 @@ const ProjectDetail = () => {
             {tags.map((tag, index) => <span key={index} className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">{tag}</span>)}
           </div>
           <div className="mb-6 text-gray-500 text-sm">
-            <p>By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline">{project.teacher_name}</Link></p>
+            <p className="flex items-center">
+              By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline ml-1">{project.teacher_name}</Link>
+              <VerifiedBadge languages={project.teacher_verified_languages} />
+            </p>
             {project.requester_name && <p className="mt-1">Requested by {project.requester_name}</p>}
           </div>
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
@@ -170,7 +174,7 @@ const ProjectDetail = () => {
             </div>
           )}
 
-          {project.is_backer && project.status === 'pending_confirmation' && (
+          {project.is_backed_by_user && project.status === 'pending_confirmation' && (
             <div className="my-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700">
               <h4 className="font-bold">Action Required</h4>
               <p className="mb-2">The teacher has marked this project as complete. Please review the materials and confirm completion to release the funds.</p>
@@ -178,7 +182,7 @@ const ProjectDetail = () => {
             </div>
           )}
 
-          {canRate && (
+          {canRate ? (
             <div ref={ratingSectionRef} className="mt-8 border-t border-gray-200 pt-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Your Rating</h2>
               <RateProject 
@@ -188,6 +192,13 @@ const ProjectDetail = () => {
                 initialComment={project.my_rating?.comment}
               />
             </div>
+          ) : (
+            project.is_backed_by_user && project.status !== 'completed' && (
+              <div className="mt-8 border-t border-gray-200 pt-8 p-4 bg-blue-50 border-l-4 border-blue-200 text-blue-700">
+                <p className="font-bold">Rating Unavailable</p>
+                <p className="text-sm">You can rate this project once its status is 'completed'. Current status: {project.status.replace(/_/g, ' ')}.</p>
+              </div>
+            )
           )}
 
           {reviews.length > 0 && (

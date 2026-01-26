@@ -87,6 +87,10 @@ class LanguageLevelsRead(BaseModel):
     language: str
     levels: List[str]
 
+class MyRatingRead(BaseModel):
+    rating: int
+    comment: Optional[str] = None
+
 class FilterOptionsRead(BaseModel):
     languages: List[LanguageLevelsRead]
 
@@ -108,6 +112,7 @@ class ProjectRead(BaseModel):
     teacher_id: int
     teacher_name: str
     teacher_avatar_url: Optional[str] = None
+    teacher_verified_languages: List[str] = [] # New field
     origin_request_id: Optional[int] = None
     origin_request_title: Optional[str] = None
     origin_request_student_name: Optional[str] = None
@@ -117,6 +122,7 @@ class ProjectRead(BaseModel):
     is_teacher_verified: bool = False
     average_rating: Optional[float] = None
     total_ratings: int = 0
+    my_rating: Optional[MyRatingRead] = None
     is_series: bool = False
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None

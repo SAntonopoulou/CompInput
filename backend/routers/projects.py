@@ -14,9 +14,8 @@ from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
 from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus, RequestBlacklist
 from ..schemas import (
-    ProjectRead, ProjectCreate, ProjectUpdateModel, UpdateCreate, UpdateRead,
-    BackerRead, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead,
-    RequestRead, MessageRead, CounterOffer, ProjectResponse # Keep MessageRead if needed for manager, otherwise remove
+    ProjectRead, ProjectCreate, ProjectUpdateModel, UpdateCreate, UpdateRead, BackerRead, 
+    LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead, MyRatingRead
 )
 
 logger = logging.getLogger(__name__)
@@ -29,6 +28,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 # Helper function to create ProjectRead from Project model
 def _create_project_read(project: Project, current_user: Optional[User], session: Session) -> ProjectRead:
     is_backed_by_user = False
+    my_rating = None
     if current_user:
         pledge = session.exec(
             select(Pledge)
@@ -38,6 +38,15 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         ).first()
         if pledge:
             is_backed_by_user = True
+        
+        if project.status == ProjectStatus.COMPLETED:
+            user_rating = session.exec(
+                select(ProjectRating)
+                .where(ProjectRating.project_id == project.id)
+                .where(ProjectRating.user_id == current_user.id)
+            ).first()
+            if user_rating:
+                my_rating = MyRatingRead(rating=user_rating.rating, comment=user_rating.comment)
 
     is_owner = current_user and project.teacher_id == current_user.id
 
@@ -52,16 +61,18 @@ def _create_project_read(project: Project, current_user: Optional[User], session
     average_rating = avg_rating_result[0] if avg_rating_result and avg_rating_result[0] else None
     total_ratings = avg_rating_result[1] if avg_rating_result and avg_rating_result[1] else 0
 
-    # Check teacher verification status
+    # Check teacher verification status and get verified languages
     is_teacher_verified = False
+    teacher_verified_languages = []
     if project.teacher_id:
-        verification = session.exec(
+        verifications = session.exec(
             select(TeacherVerification)
             .where(TeacherVerification.teacher_id == project.teacher_id)
             .where(TeacherVerification.status == VerificationStatus.APPROVED)
-        ).first()
-        if verification:
+        ).all()
+        if verifications:
             is_teacher_verified = True
+            teacher_verified_languages = [v.language for v in verifications]
 
     origin_request_title = None
     origin_request_student_name = None
@@ -88,6 +99,7 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         teacher_id=project.teacher_id,
         teacher_name=teacher_name,
         teacher_avatar_url=teacher_avatar_url,
+        teacher_verified_languages=teacher_verified_languages,
         origin_request_id=project.origin_request_id,
         origin_request_title=origin_request_title,
         origin_request_student_name=origin_request_student_name,
@@ -97,6 +109,7 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         is_teacher_verified=is_teacher_verified,
         average_rating=average_rating,
         total_ratings=total_ratings,
+        my_rating=my_rating,
         is_series=project.is_series,
         num_videos=project.num_videos,
         price_per_video=project.price_per_video

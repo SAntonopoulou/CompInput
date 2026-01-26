@@ -18,7 +18,7 @@ const Settings = () => {
       const userRes = await client.get('/users/me');
       setUser(userRes.data);
       if (userRes.data.role === 'teacher') {
-        const verificationsRes = await client.get('/verifications/me');
+        const verificationsRes = await client.get('/verifications/'); // Fetch all verifications for the current teacher
         setVerifications(verificationsRes.data);
       }
     } catch (error) {
@@ -58,7 +58,7 @@ const Settings = () => {
 
   const handleVerificationSubmit = async (e) => {
     e.preventDefault();
-    if (!newVerification.language || !newVerification.document_url) {
+    if (!newVerification.language.trim() || !newVerification.document_url.trim()) {
       addToast("Please fill out both fields.", "error");
       return;
     }
@@ -69,6 +69,15 @@ const Settings = () => {
       fetchUserData(); // Refresh verifications list
     } catch (error) {
       addToast(error.response?.data?.detail || "Failed to submit request.", "error");
+    }
+  };
+
+  const getStatusClasses = (status) => {
+    switch (status) {
+      case 'approved': return 'bg-green-100 text-green-800';
+      case 'rejected': return 'bg-red-100 text-red-800';
+      case 'pending': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -85,30 +94,30 @@ const Settings = () => {
               <h3 className="text-lg leading-6 font-medium text-gray-900">Language Verifications</h3>
               <p className="mt-2 max-w-xl text-sm text-gray-500">Submit documents to get a "Verified" badge for languages you're certified in.</p>
               
-              <form onSubmit={handleVerificationSubmit} className="mt-5 sm:flex sm:items-center">
-                <div className="w-full sm:max-w-xs">
-                  <input type="text" value={newVerification.language} onChange={(e) => setNewVerification({...newVerification, language: e.target.value})} placeholder="Language (e.g., Japanese)" className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
+              <form onSubmit={handleVerificationSubmit} className="mt-5 space-y-4">
+                <div>
+                  <label htmlFor="language" className="block text-sm font-medium text-gray-700">Language</label>
+                  <input type="text" id="language" value={newVerification.language} onChange={(e) => setNewVerification({...newVerification, language: e.target.value})} placeholder="e.g., Japanese" className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
                 </div>
-                <div className="mt-3 sm:mt-0 sm:ml-3 w-full">
-                  <input type="url" value={newVerification.document_url} onChange={(e) => setNewVerification({...newVerification, document_url: e.target.value})} placeholder="Link to Certificate (e.g., Google Drive)" className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
+                <div>
+                  <label htmlFor="document_url" className="block text-sm font-medium text-gray-700">Link to Certificate</label>
+                  <input type="url" id="document_url" value={newVerification.document_url} onChange={(e) => setNewVerification({...newVerification, document_url: e.target.value})} placeholder="e.g., https://drive.google.com/..." className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
                 </div>
-                <button type="submit" className="mt-3 sm:mt-0 sm:ml-3 w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">Submit</button>
+                <button type="submit" className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">Submit Verification</button>
               </form>
 
-              <div className="mt-6">
+              <div className="mt-8">
                 <h4 className="text-md font-medium text-gray-800">Your Submissions</h4>
                 {verifications.length === 0 ? <p className="text-sm text-gray-500 mt-2">No submissions yet.</p> : (
                   <ul className="mt-2 border border-gray-200 rounded-md divide-y divide-gray-200">
                     {verifications.map(v => (
                       <li key={v.id} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
                         <div className="w-0 flex-1 flex items-center">
-                          <span className="ml-2 flex-1 w-0 truncate">{v.language}</span>
+                          <span className="ml-2 flex-1 w-0 truncate font-medium">{v.language}</span>
+                          <a href={v.document_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-indigo-600 hover:text-indigo-900 truncate">View Document</a>
                         </div>
                         <div className="ml-4 flex-shrink-0">
-                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            v.status === 'approved' ? 'bg-green-100 text-green-800' : 
-                            v.status === 'rejected' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
-                          }`}>
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusClasses(v.status)}`}>
                             {v.status}
                           </span>
                         </div>

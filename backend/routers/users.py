@@ -317,7 +317,7 @@ def get_teacher_ratings(
     statement = (
         select(ProjectRating)
         .join(Project)
-        .where(Project.teacher_id == user.id)
+        .where(Project.teacher_id == teacher.id) # Corrected from user.id to teacher.id
         .options(selectinload(ProjectRating.project))
         .order_by(ProjectRating.created_at.desc())
     )

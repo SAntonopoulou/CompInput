@@ -1,11 +1,11 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import TeacherVerification, User, UserRole, VerificationStatus
+from ..models import TeacherVerification, User, UserRole, VerificationStatus, Notification
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/verifications", tags=["verifications"])
 
@@ -13,11 +13,32 @@ class VerificationCreate(BaseModel):
     language: str
     document_url: str
 
+@router.get("/", response_model=List[TeacherVerification])
+def get_my_verifications(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Retrieves all verification requests for the current teacher.
+    """
+    if current_user.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only teachers can view their verification requests."
+        )
+    
+    verifications = session.exec(
+        select(TeacherVerification)
+        .where(TeacherVerification.teacher_id == current_user.id)
+        .order_by(TeacherVerification.created_at.desc())
+    ).all()
+    return verifications
+
 @router.post("/", response_model=TeacherVerification, status_code=status.HTTP_201_CREATED)
-def submit_verification_request(
+def submit_verification(
     verification_in: VerificationCreate,
     current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
+    session: Session = Depends(get_session)
 ):
     """
     Allows a teacher to submit a new language verification request.
@@ -25,42 +46,39 @@ def submit_verification_request(
     if current_user.role != UserRole.TEACHER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can submit verification requests.",
+            detail="Only teachers can submit verification requests."
         )
 
-    existing_request = session.exec(
-        select(TeacherVerification).where(
-            TeacherVerification.teacher_id == current_user.id,
-            TeacherVerification.language == verification_in.language,
-            TeacherVerification.status.in_([VerificationStatus.PENDING, VerificationStatus.APPROVED])
-        )
+    # Check if a verification for this language already exists and is pending or approved
+    existing_verification = session.exec(
+        select(TeacherVerification)
+        .where(TeacherVerification.teacher_id == current_user.id)
+        .where(TeacherVerification.language == verification_in.language)
+        .where(TeacherVerification.status.in_([VerificationStatus.PENDING, VerificationStatus.APPROVED]))
     ).first()
-    if existing_request:
+
+    if existing_verification:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"You already have a pending or approved verification for {verification_in.language}.",
+            detail=f"A verification for {verification_in.language} is already {existing_verification.status.value}."
         )
 
     verification = TeacherVerification(
-        teacher_id=current_user.id,
-        language=verification_in.language,
-        document_url=verification_in.document_url,
-        status=VerificationStatus.PENDING,
+        **verification_in.dict(),
+        teacher_id=current_user.id
     )
     session.add(verification)
+
+    # Notify all admins of the new verification request
+    admins = session.exec(select(User).where(User.role == UserRole.ADMIN)).all()
+    for admin in admins:
+        notification = Notification(
+            user_id=admin.id,
+            content=f"New verification request from {current_user.full_name} for {verification.language}.",
+            link="/admin/dashboard" # Or a more specific link to the verifications page
+        )
+        session.add(notification)
+
     session.commit()
     session.refresh(verification)
     return verification
-
-@router.get("/me", response_model=List[TeacherVerification])
-def get_my_verifications(
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session),
-):
-    """
-    Get all verification requests for the current teacher.
-    """
-    if current_user.role != UserRole.TEACHER:
-        return []
-        
-    return current_user.verifications
