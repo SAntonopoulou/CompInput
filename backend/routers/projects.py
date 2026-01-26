@@ -12,7 +12,7 @@ import stripe
 import logging
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus
+from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus, RequestBlacklist
 from ..schemas import ProjectRead, _create_project_read, LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead
 from pydantic import BaseModel
 
@@ -88,6 +88,14 @@ def _cancel_project_logic(project: Project, session: Session):
             session.add(request)
             notification = Notification(user_id=request.user_id, content=f"Project '{project.title}' was cancelled. Your request has been reopened.", link="/requests")
             session.add(notification)
+
+            # Blacklist the teacher who cancelled the project from this request
+            if project.teacher_id:
+                blacklist_entry = RequestBlacklist(
+                    request_id=request.id,
+                    teacher_id=project.teacher_id
+                )
+                session.add(blacklist_entry)
 
 @router.get("/filter-options", response_model=FilterOptionsRead)
 def get_filter_options(session: Session = Depends(get_session)):

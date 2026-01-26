@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useToast } from '../context/ToastContext';
 
 const RequestList = () => {
   const [requests, setRequests] = useState([]);
+  const [myOpenRequests, setMyOpenRequests] = useState([]);
+  const [myAcceptedRequests, setMyAcceptedRequests] = useState([]);
+  const [communityRequests, setCommunityRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -53,6 +56,27 @@ const RequestList = () => {
     };
     fetchInitialData();
   }, [token, addToast]);
+
+  useEffect(() => {
+    if (!user || !requests) return;
+
+    const myOpen = requests.filter(req => 
+      req.user_id === user.id && (req.status === 'open' || req.status === 'negotiating')
+    );
+    const myAccepted = requests.filter(req => 
+      req.user_id === user.id && req.status === 'accepted'
+    );
+    const community = requests.filter(req => 
+      req.user_id !== user.id && 
+      (req.status === 'open' || req.status === 'negotiating') &&
+      (req.is_private === false || (user.role === 'teacher' && req.target_teacher_id === user.id))
+    );
+
+    setMyOpenRequests(myOpen);
+    setMyAcceptedRequests(myAccepted);
+    setCommunityRequests(community);
+
+  }, [requests, user]);
 
   useEffect(() => {
     const searchTeachers = async () => {
@@ -121,7 +145,7 @@ const RequestList = () => {
 
   const allLanguages = availableFilters.languages.map(l => l.language);
   const allLevels = [...new Set(availableFilters.languages.flatMap(l => l.levels))];
-  const userHasRequests = requests.some(req => req.user_id === user?.id);
+  const userHasRequests = myOpenRequests.length > 0 || myAcceptedRequests.length > 0;
 
   const renderEmptyState = () => (
     <div className="text-center py-16 bg-white rounded-lg shadow-md">
@@ -147,23 +171,46 @@ const RequestList = () => {
     </div>
   );
 
-  const filteredRequests = requests.filter(req => {
-    if (req.status === 'cancelled') {
-      return false;
-    }
-    const isOwner = user && user.id === req.user_id;
-    if (isOwner) {
-      return true; // Owners see all their non-cancelled requests
-    }
-    // Logic for non-owners
-    if (req.is_private) {
-      return user && user.id === req.target_teacher_id;
-    }
-    if (req.status === 'open' || req.status === 'negotiating') {
-      return true;
-    }
-    return false;
-  });
+  const renderRequestCard = (req) => {
+    const isAccepted = req.status === 'accepted';
+    const title = isAccepted ? req.project_title : req.title;
+    const description = isAccepted ? req.project_description : req.description;
+    const budget = isAccepted ? req.project_funding_goal : req.budget;
+
+    return (
+      <div key={req.id} className={`bg-white overflow-hidden shadow rounded-lg border ${req.target_teacher_id ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-gray-200'}`}>
+        <div className="px-4 py-5 sm:p-6">
+          <div className="flex justify-between items-start">
+              <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">{title}</h3>
+              <div className="flex flex-col items-end space-y-1">
+                  {req.target_teacher_id && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Targeted</span>}
+                  {req.is_private && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Private</span>}
+              </div>
+          </div>
+          <div className="flex space-x-2 mb-4">
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{req.language}</span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{req.level}</span>
+          </div>
+          <p className="text-sm text-gray-500 mb-4 line-clamp-3">{description}</p>
+          <div className="mb-4">
+              <p className="text-sm font-medium text-gray-900">Budget: {formatCurrency(budget)}</p>
+          </div>
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+            <span className="text-xs text-gray-400">Requested by {req.user_name}</span>
+            {user && user.role === 'teacher' && req.user_id !== user.id && (req.status === 'open' || req.status === 'negotiating') && (
+              <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
+            )}
+            {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && (
+              <button onClick={() => confirmCancelRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>
+            )}
+            {user && user.id === req.user_id && req.status === 'accepted' && req.associated_project_id && (
+              <Link to={`/projects/${req.associated_project_id}`} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">View Project</Link>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -172,40 +219,32 @@ const RequestList = () => {
           {!userHasRequests && renderEmptyState()}
           {userHasRequests && renderRequestHeader()}
           
-          <h1 className="text-3xl font-bold text-gray-900 mb-8 mt-8">Community Requests</h1>
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredRequests.map((req) => (
-              <div key={req.id} className={`bg-white overflow-hidden shadow rounded-lg border ${req.target_teacher_id ? 'border-indigo-200 ring-1 ring-indigo-100' : 'border-gray-200'}`}>
-                <div className="px-4 py-5 sm:p-6">
-                  <div className="flex justify-between items-start">
-                      <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">{req.title}</h3>
-                      <div className="flex flex-col items-end space-y-1">
-                          {req.target_teacher_id && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">Targeted</span>}
-                          {req.is_private && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Private</span>}
-                      </div>
-                  </div>
-                  <div className="flex space-x-2 mb-4">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">{req.language}</span>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">{req.level}</span>
-                  </div>
-                  <p className="text-sm text-gray-500 mb-4 line-clamp-3">{req.description}</p>
-                  <div className="mb-4">
-                      <p className="text-sm font-medium text-gray-900">Budget: {formatCurrency(req.budget)}</p>
-                  </div>
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                    <span className="text-xs text-gray-400">Requested by {req.user_name}</span>
-                    {user && user.role === 'teacher' && req.status === 'open' && (
-                      <div className="flex space-x-2">
-                          <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
-                      </div>
-                    )}
-                    {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && <button onClick={() => confirmCancelRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>}
-                    {user && user.id === req.user_id && req.status === 'accepted' && <span className="text-xs text-green-500 font-medium">Accepted</span>}
-                  </div>
-                </div>
+          {myOpenRequests.length > 0 && (
+            <div className="mt-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">My Open Requests</h2>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {myOpenRequests.map(renderRequestCard)}
               </div>
-            ))}
-          </div>
+            </div>
+          )}
+
+          {myAcceptedRequests.length > 0 && (
+            <div className="mt-12">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">My Accepted Projects</h2>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {myAcceptedRequests.map(renderRequestCard)}
+              </div>
+            </div>
+          )}
+
+          {communityRequests.length > 0 && (
+            <div className="mt-12">
+              <h2 className="text-2xl font-bold text-gray-900 mb-4">Community Requests</h2>
+              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {communityRequests.map(renderRequestCard)}
+              </div>
+            </div>
+          )}
         </>
       )}
 

@@ -43,6 +43,8 @@ class ConversationStatus(str, Enum):
 class MessageType(str, Enum):
     TEXT = "text"
     OFFER = "offer"
+    DEMO_REQUEST = "demo_request"
+    DEMO_VIDEO = "demo_video"
 
 class OfferStatus(str, Enum):
     PENDING = "pending"
@@ -238,6 +240,7 @@ class Conversation(SQLModel, table=True):
     student_id: int = Field(foreign_key="user.id", index=True)
     status: ConversationStatus = Field(default=ConversationStatus.OPEN)
     student_demo_video_url: Optional[str] = None
+    demo_video_requested: bool = Field(default=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 

@@ -3,8 +3,9 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import { useToast } from '../context/ToastContext';
 import { useInbox } from '../context/InboxContext';
-import { FaPaperPlane, FaVideo, FaReply, FaTimes, FaDollarSign } from 'react-icons/fa';
+import { FaPaperPlane, FaVideo, FaReply, FaTimes, FaDollarSign, FaFileVideo } from 'react-icons/fa';
 import ConfirmationModal from '../components/ConfirmationModal';
+import { getVideoThumbnail } from '../utils/video'; // Assuming this might be useful later
 
 const Inbox = () => {
   const { conversationId } = useParams();
@@ -32,6 +33,18 @@ const Inbox = () => {
 
   const messagesContainerRef = useRef(null);
   const ws = useRef(null);
+
+  // Helper to get embeddable URL
+  const getEmbedUrl = (url) => {
+    if (!url) return null;
+    const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([\w-]{11})/;
+    const match = url.match(youtubeRegex);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}`;
+    }
+    // Add other video platform handlers here if needed
+    return null;
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -101,49 +114,40 @@ const Inbox = () => {
     ws.current.onopen = () => console.log("WebSocket connected");
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      console.log("WebSocket message received:", data); // Add this log
       if (data.type === 'OFFER_ACCEPTED') {
         navigate(`/projects/${data.project_id}`);
       } else if (data.type === 'CONVERSATION_CLOSED') {
         setCurrentConversation(prev => ({ ...prev, status: 'closed' }));
         fetchConversations();
       } else if (data.type === 'MESSAGE_AND_CONVERSATION_CLOSED') {
-        console.log("MESSAGE_AND_CONVERSATION_CLOSED data.message:", data.message); // Add this log
         setCurrentConversation(prev => {
           if (prev && prev.id === data.conversation_id) {
-            // Ensure data.message is an object before adding
-            if (data.message && typeof data.message === 'object') {
-              return { ...prev, messages: [...prev.messages, data.message], status: 'closed' };
-            } else {
-              console.error("Received MESSAGE_AND_CONVERSATION_CLOSED with invalid message:", data.message);
-              return { ...prev, status: 'closed' }; // Close without adding malformed message
-            }
+            return { ...prev, messages: [...prev.messages, data.message], status: 'closed' };
           }
           return prev;
         });
         let toastMessage = 'Conversation archived.';
-        if (data.reason === 'student_left') {
-          toastMessage = 'Student left conversation. Conversation archived.';
-        } else if (data.reason === 'teacher_left') {
-          toastMessage = 'You have left the conversation. It is now archived.';
-        } else if (data.reason === 'request_cancelled') {
-          toastMessage = 'Request cancelled by student. Conversation archived.';
-        }
+        if (data.reason === 'student_left') toastMessage = 'Student left conversation. Conversation archived.';
+        else if (data.reason === 'teacher_left') toastMessage = 'You have left the conversation. It is now archived.';
+        else if (data.reason === 'request_cancelled') toastMessage = 'Request cancelled by student. Conversation archived.';
         addToast(toastMessage, 'info');
-        fetchConversations(); // Refresh sidebar to move conversation to archive
+        fetchConversations();
       } else {
+        // This handles regular messages, including our new DEMO_REQUEST and DEMO_VIDEO types
         setCurrentConversation((prev) => {
           if (prev && prev.id === data.conversation_id) {
             if (ws.current && ws.current.readyState === WebSocket.OPEN) {
               ws.current.send(JSON.stringify({ type: "READ_RECEIPT", message_ids: [data.id] }));
             }
-            // Ensure data is an object before adding as a message
-            if (data && typeof data === 'object') {
-              return { ...prev, messages: [...prev.messages, data] };
-            } else {
-              console.error("Received regular WebSocket message with invalid data:", data);
-              return prev;
+            // If a demo video was just submitted, update the conversation object as well
+            if (data.message_type === 'demo_video') {
+              return { ...prev, messages: [...prev.messages, data], student_demo_video_url: data.content };
             }
+            // If a demo was just requested, update the flag
+            if (data.message_type === 'demo_request') {
+              return { ...prev, messages: [...prev.messages, data], demo_video_requested: true };
+            }
+            return { ...prev, messages: [...prev.messages, data] };
           }
           return prev;
         });
@@ -191,13 +195,24 @@ const Inbox = () => {
   };
 
   const handleUpdateDemoVideo = async () => {
-    if (!currentConversation || !user || user.id !== currentConversation.student_id) return;
+    if (!currentConversation || !user || user.id !== currentConversation.student_id || !demoVideoUrl.trim()) return;
     try {
       await client.patch(`/conversations/${currentConversation.id}/demo-video`, { url: demoVideoUrl });
-      addToast('Demo video URL updated', 'success');
-      fetchCurrentConversation();
+      addToast('Demo video submitted!', 'success');
+      // The websocket message will update the state
     } catch (error) {
-      addToast('Failed to update demo video URL', 'error');
+      addToast(error.response?.data?.detail || 'Failed to submit demo video', 'error');
+    }
+  };
+
+  const handleRequestDemoVideo = async () => {
+    if (!currentConversation || !user || user.id !== currentConversation.teacher_id) return;
+    try {
+      await client.post(`/conversations/${currentConversation.id}/request-demo-video`);
+      addToast('Demo video requested', 'success');
+      // The websocket message will update the state
+    } catch (error) {
+      addToast(error.response?.data?.detail || 'Failed to request demo video', 'error');
     }
   };
 
@@ -217,7 +232,6 @@ const Inbox = () => {
     try {
       await client.post(`/conversations/${currentConversation.id}/leave`);
       addToast('Conversation left', 'success');
-      // The WebSocket will handle the display of the message and archiving.
     } catch (error) {
       addToast('Failed to leave conversation', 'error');
     } finally {
@@ -241,7 +255,6 @@ const Inbox = () => {
     try {
       await client.post(`/conversations/${currentConversation.id}/teacher-leave`);
       addToast('You have left the conversation.', 'success');
-      // The WebSocket will handle the display of the message and archiving.
     } catch (error) {
       addToast('Failed to leave conversation', 'error');
     } finally {
@@ -319,9 +332,7 @@ const Inbox = () => {
 
   if (!user) return <div className="p-10 text-center">Loading user data...</div>;
 
-  const hasPendingOffer = currentConversation?.messages
-    ?.filter(m => m && typeof m === 'object') // Filter out null/undefined/non-object items
-    .some(m => m.message_type === 'offer' && m.offer_status === 'pending');
+  const hasPendingOffer = currentConversation?.messages?.some(m => m.message_type === 'offer' && m.offer_status === 'pending');
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
@@ -330,26 +341,7 @@ const Inbox = () => {
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-xl font-bold text-gray-800">Inbox</h2>
           </div>
-          {isLoadingConversations ? (
-            <div className="p-4 text-gray-500">Loading conversations...</div>
-          ) : conversations.length === 0 ? (
-            <div className="p-4 text-gray-500">No conversations yet.</div>
-          ) : (
-            conversations.map((conv) => (
-              <div key={conv.id} onClick={() => navigate(`/messages/${conv.id}`)} className={`flex items-center p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 ${conversationId == conv.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''}`}>
-                <div className="flex-shrink-0 mr-3">
-                  {conv.other_participant.avatar_url ? <img className="h-10 w-10 rounded-full object-cover" src={conv.other_participant.avatar_url} alt={conv.other_participant.full_name} /> : <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">{conv.other_participant.full_name ? conv.other_participant.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}</div>}
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-center">
-                    <p className="text-sm font-medium text-gray-900">{conv.other_participant.full_name}</p>
-                    <p className="text-sm text-gray-600 truncate">{conv.request_title}</p>
-                  </div>
-                  {conv.unread_messages_count > 0 && <span className="text-xs font-semibold text-indigo-600">{conv.unread_messages_count} unread</span>}
-                </div>
-              </div>
-            ))
-          )}
+          {isLoadingConversations ? <div className="p-4 text-gray-500">Loading conversations...</div> : conversations.length === 0 ? <div className="p-4 text-gray-500">No conversations yet.</div> : (conversations.map((conv) => (<div key={conv.id} onClick={() => navigate(`/messages/${conv.id}`)} className={`flex items-center p-4 border-b border-gray-200 cursor-pointer hover:bg-gray-50 ${conversationId == conv.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''}`}><div className="flex-shrink-0 mr-3">{conv.other_participant.avatar_url ? <img className="h-10 w-10 rounded-full object-cover" src={conv.other_participant.avatar_url} alt={conv.other_participant.full_name} /> : <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-sm">{conv.other_participant.full_name ? conv.other_participant.full_name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '??'}</div>}</div><div className="flex-1"><div className="flex justify-between items-center"><p className="text-sm font-medium text-gray-900">{conv.other_participant.full_name}</p><p className="text-sm text-gray-600 truncate">{conv.request_title}</p></div>{conv.unread_messages_count > 0 && <span className="text-xs font-semibold text-indigo-600">{conv.unread_messages_count} unread</span>}</div></div>)))}
           <div className="p-4 border-t border-gray-200">
             <Link to="/messages/archive" className="text-indigo-600 hover:underline">View Previous Conversations</Link>
           </div>
@@ -361,6 +353,14 @@ const Inbox = () => {
                 <div>
                   <h3 className="text-lg font-bold text-gray-800">{currentConversation.request_title}</h3>
                   <p className="text-sm text-gray-600">{user.id === currentConversation.teacher_id ? `Student: ${currentConversation.student.full_name}` : `Teacher: ${currentConversation.teacher.full_name}`}</p>
+                  {user.id === currentConversation.teacher_id && currentConversation.student_demo_video_url && (
+                    <div className="mt-2">
+                      <a href={currentConversation.student_demo_video_url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium text-indigo-600 hover:text-indigo-800 flex items-center">
+                        <FaVideo className="mr-2" />
+                        Student Demo Video
+                      </a>
+                    </div>
+                  )}
                 </div>
                 <div className="flex space-x-2">
                   {currentConversation.status === 'open' && user.id === currentConversation.student_id && <button onClick={handleLeaveConversation} className="bg-gray-500 hover:bg-gray-600 text-white text-sm font-medium py-2 px-4 rounded-md">Leave Conversation</button>}
@@ -368,18 +368,68 @@ const Inbox = () => {
                 </div>
               </div>
               <div ref={messagesContainerRef} className="flex-1 p-4 overflow-y-auto bg-gray-50 min-h-0">
-                {isLoadingMessages ? <div className="text-center text-gray-500">Loading messages...</div> : currentConversation.messages.length === 0 ? <div className="text-center text-gray-500">No messages yet.</div> : currentConversation.messages.map((message) => (
-                  <div key={message.id} className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'}`}>
-                      {message.replied_to_message_id && <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}><p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>{message.replied_to_sender_name || 'Deleted User'}</p><p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>{message.replied_to_message_content}</p></div>}
-                      {message.message_type === 'offer' ? <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300 text-yellow-800"><p className="font-bold">Offer from {message.sender_full_name}:</p><p>{message.offer_description}</p><p className="font-bold">{formatCurrency(message.offer_price)}</p>{message.offer_status === 'pending' && user.id === currentConversation.student_id && <div className="mt-2 flex space-x-2"><button onClick={() => handleAcceptOfferClick(message.id)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-1 px-2 rounded-md">Accept Offer</button><button onClick={() => handleRejectOfferClick(message.id)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1 px-2 rounded-md">Reject Offer</button></div>}{message.offer_status === 'accepted' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Offer Accepted</span>}{message.offer_status === 'rejected' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Offer Rejected</span>}</div> : <p className="text-sm">{message.content}</p>}
-                      <span className="block text-xs text-right opacity-75 mt-1">{formatDateTime(message.created_at)}</span>
-                      {message.message_type === 'text' && currentConversation.status === 'open' && <button onClick={() => setReplyingToMessage(message)} className={`absolute -bottom-2 ${message.sender_id === user.id ? '-left-8' : '-right-8'} p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300`} title="Reply"><FaReply size={12} /></button>}
+                {isLoadingMessages ? <div className="text-center text-gray-500">Loading messages...</div> : currentConversation.messages.map((message) => {
+                  const embedUrl = message.message_type === 'demo_video' ? getEmbedUrl(message.content) : null;
+                  return (
+                    <div key={message.id}>
+                      {message.message_type === 'demo_request' ? (
+                        <div className="text-center my-4">
+                          <div className="inline-block bg-blue-100 text-blue-800 text-sm font-semibold px-4 py-2 rounded-full">
+                            {message.content}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className={`flex mb-4 ${message.sender_id === user.id ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg shadow relative ${message.sender_id === user.id ? 'bg-indigo-500 text-white' : 'bg-gray-300 text-gray-800'}`}>
+                            {message.replied_to_message_id && <div className={`mb-2 p-2 rounded-md border-l-4 ${message.sender_id === user.id ? 'border-indigo-300 bg-indigo-600' : 'border-gray-400 bg-gray-200'}`}><p className={`text-xs font-semibold ${message.sender_id === user.id ? 'text-indigo-100' : 'text-gray-700'}`}>{message.replied_to_sender_name || 'Deleted User'}</p><p className={`text-xs italic ${message.sender_id === user.id ? 'text-indigo-200' : 'text-gray-600'} truncate`}>{message.replied_to_message_content}</p></div>}
+                            
+                            {message.message_type === 'offer' ? (
+                              <div className="p-3 rounded-md bg-yellow-100 border border-yellow-300 text-yellow-800"><p className="font-bold">Offer from {message.sender_full_name}:</p><p>{message.offer_description}</p><p className="font-bold">{formatCurrency(message.offer_price)}</p>{message.offer_status === 'pending' && user.id === currentConversation.student_id && <div className="mt-2 flex space-x-2"><button onClick={() => handleAcceptOfferClick(message.id)} className="bg-green-600 hover:bg-green-700 text-white text-xs font-medium py-1 px-2 rounded-md">Accept Offer</button><button onClick={() => handleRejectOfferClick(message.id)} className="bg-red-600 hover:bg-red-700 text-white text-xs font-medium py-1 px-2 rounded-md">Reject Offer</button></div>}{message.offer_status === 'accepted' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Offer Accepted</span>}{message.offer_status === 'rejected' && <span className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Offer Rejected</span>}</div>
+                            ) : message.message_type === 'demo_video' ? (
+                              embedUrl ? (
+                                <div className="aspect-w-16 aspect-h-9">
+                                  <iframe src={embedUrl} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen title="Submitted Demo Video"></iframe>
+                                </div>
+                              ) : (
+                                <p className="text-sm">Video submitted: <a href={message.content} target="_blank" rel="noopener noreferrer" className="underline">{message.content}</a></p>
+                              )
+                            ) : (
+                              <p className="text-sm">{message.content}</p>
+                            )}
+                            
+                            <span className="block text-xs text-right opacity-75 mt-1">{formatDateTime(message.created_at)}</span>
+                            {message.message_type === 'text' && currentConversation.status === 'open' && <button onClick={() => setReplyingToMessage(message)} className={`absolute -bottom-2 ${message.sender_id === user.id ? '-left-8' : '-right-8'} p-1 rounded-full bg-gray-200 text-gray-600 hover:bg-gray-300`} title="Reply"><FaReply size={12} /></button>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              {currentConversation.status === 'open' ? <div className="bg-white p-4 border-t border-gray-200">
+                {replyingToMessage && <div className="mb-2 p-2 rounded-md bg-gray-100 border-l-4 border-indigo-500 flex justify-between items-center"><div><p className="text-sm font-semibold text-gray-700">Replying to {replyingToMessage.sender_full_name}</p><p className="text-sm text-gray-600 truncate">{replyingToMessage.content}</p></div><button onClick={() => setReplyingToMessage(null)} className="text-gray-500 hover:text-gray-700"><FaTimes /></button></div>}
+                
+                {user.id === currentConversation.student_id && currentConversation.demo_video_requested && !currentConversation.student_demo_video_url && (
+                  <div className="mb-4">
+                    <label htmlFor="demoVideo" className="block text-sm font-medium text-gray-700">Submit Your Demo Video URL</label>
+                    <div className="mt-1 flex rounded-md shadow-sm">
+                      <input type="url" name="demoVideo" id="demoVideo" className="flex-1 block w-full rounded-none rounded-l-md border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="https://youtube.com/watch?v=..." value={demoVideoUrl} onChange={(e) => setDemoVideoUrl(e.target.value)} />
+                      <button type="button" onClick={handleUpdateDemoVideo} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"><FaVideo className="mr-2" /> Submit</button>
                     </div>
                   </div>
-                ))}
-              </div>
-              {currentConversation.status === 'open' ? <div className="bg-white p-4 border-t border-gray-200">{replyingToMessage && <div className="mb-2 p-2 rounded-md bg-gray-100 border-l-4 border-indigo-500 flex justify-between items-center"><div><p className="text-sm font-semibold text-gray-700">Replying to {replyingToMessage.sender_full_name}</p><p className="text-sm text-gray-600 truncate">{replyingToMessage.content}</p></div><button onClick={() => setReplyingToMessage(null)} className="text-gray-500 hover:text-gray-700"><FaTimes /></button></div>}{user.id === currentConversation.student_id && <div className="mb-4"><label htmlFor="demoVideo" className="block text-sm font-medium text-gray-700">Demo Video URL (for teacher)</label><div className="mt-1 flex rounded-md shadow-sm"><input type="url" name="demoVideo" id="demoVideo" className="flex-1 block w-full rounded-none rounded-l-md border-gray-300 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="https://youtube.com/watch?v=..." value={demoVideoUrl} onChange={(e) => setDemoVideoUrl(e.target.value)} /><button type="button" onClick={handleUpdateDemoVideo} className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-r-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"><FaVideo className="mr-2" /> Update</button></div>{currentConversation.student_demo_video_url && <p className="mt-2 text-sm text-gray-500">Current: <a href={currentConversation.student_demo_video_url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline">{currentConversation.student_demo_video_url}</a></p>}</div>}<form onSubmit={handleSendMessage} className="flex items-center">{user.id === currentConversation.teacher_id && <button type="button" onClick={() => {setShowOfferModal(true); setOfferDescription(currentConversation.request_title); setOfferPrice(currentConversation.request.budget / 100);}} className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-l-md flex items-center justify-center mr-1" disabled={hasPendingOffer}><FaDollarSign className="mr-2" /> Make Offer</button>}<input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type your message..." className="flex-1 border border-gray-300 rounded-l-md py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" disabled={isSending} /><button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-r-md flex items-center justify-center" disabled={isSending}><FaPaperPlane className="mr-2" /> Send</button></form></div> : <div className="bg-white p-4 border-t border-gray-200 text-center text-gray-600">This conversation is closed.</div>}
+                )}
+
+                <form onSubmit={handleSendMessage} className="flex items-center">
+                  {user.id === currentConversation.teacher_id && (
+                    <>
+                      <button type="button" onClick={() => {setShowOfferModal(true); setOfferDescription(currentConversation.request_title); setOfferPrice(currentConversation.request.budget / 100);}} className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-3 rounded-l-md flex items-center justify-center mr-1" disabled={hasPendingOffer}><FaDollarSign className="mr-1" /> Offer</button>
+                      <button type="button" onClick={handleRequestDemoVideo} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-3 flex items-center justify-center mr-1" disabled={currentConversation.demo_video_requested}><FaFileVideo className="mr-1" /> Demo</button>
+                    </>
+                  )}
+                  <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Type your message..." className={`flex-1 border border-gray-300 py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 ${user.id === currentConversation.teacher_id ? '' : 'rounded-l-md'}`} disabled={isSending} />
+                  <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-r-md flex items-center justify-center" disabled={isSending}><FaPaperPlane className="mr-2" /> Send</button>
+                </form>
+              </div> : <div className="bg-white p-4 border-t border-gray-200 text-center text-gray-600">This conversation is closed.</div>}
             </>
           ) : <div className="flex-1 flex items-center justify-center text-gray-500">Select a conversation to start chatting.</div>}
         </div>

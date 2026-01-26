@@ -64,6 +64,7 @@ class ConversationRead(BaseModel):
     student_id: int
     status: ConversationStatus
     student_demo_video_url: Optional[str] = None
+    demo_video_requested: bool = False
     created_at: datetime
     updated_at: datetime
     
@@ -197,6 +198,7 @@ def _create_conversation_read(conversation: Conversation, current_user: User, se
         student_id=conversation.student_id,
         status=conversation.status,
         student_demo_video_url=conversation.student_demo_video_url,
+        demo_video_requested=conversation.demo_video_requested,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
         request_title=conversation.request.title,
@@ -828,8 +830,57 @@ def close_conversation(
 
     return _create_conversation_read(conversation, current_user, session)
 
-@router.patch("/{conversation_id}/demo-video", response_model=ConversationRead)
-def update_demo_video_url(
+@router.post("/{conversation_id}/request-demo-video", response_model=MessageRead)
+async def request_demo_video(
+    conversation_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    conversation = session.get(Conversation, conversation_id)
+    if not conversation:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found.")
+
+    if conversation.teacher_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the teacher can request a demo video.")
+
+    if conversation.demo_video_requested:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A demo video has already been requested.")
+
+    conversation.demo_video_requested = True
+    session.add(conversation)
+
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id,
+        content="The teacher has requested a video demonstration of your language level.",
+        message_type=MessageType.DEMO_REQUEST,
+    )
+    session.add(message)
+    conversation.updated_at = datetime.utcnow()
+    session.add(conversation)
+    session.commit()
+    session.refresh(message)
+    session.refresh(conversation)
+
+    sender_user = session.get(User, message.sender_id)
+    message_read_instance = MessageRead(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_id=message.sender_id,
+        content=message.content,
+        created_at=message.created_at,
+        is_read=False,
+        sender_full_name=sender_user.full_name,
+        sender_avatar_url=sender_user.avatar_url,
+        message_type=message.message_type,
+    )
+
+    await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
+
+    return message_read_instance
+
+@router.patch("/{conversation_id}/demo-video", response_model=MessageRead)
+async def update_demo_video_url(
     conversation_id: int,
     demo_video_in: DemoVideoUpdate,
     current_user: User = Depends(get_current_user),
@@ -841,14 +892,44 @@ def update_demo_video_url(
     
     if conversation.student_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the student can update the demo video URL.")
+
+    if not conversation.demo_video_requested:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No demo video was requested.")
+
+    if conversation.student_demo_video_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A demo video has already been submitted.")
     
     conversation.student_demo_video_url = demo_video_in.url
     conversation.updated_at = datetime.utcnow()
     session.add(conversation)
+
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=current_user.id,
+        content=demo_video_in.url,
+        message_type=MessageType.DEMO_VIDEO,
+    )
+    session.add(message)
     session.commit()
+    session.refresh(message)
     session.refresh(conversation)
 
-    return _create_conversation_read(conversation, current_user, session)
+    sender_user = session.get(User, message.sender_id)
+    message_read_instance = MessageRead(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_id=message.sender_id,
+        content=message.content,
+        created_at=message.created_at,
+        is_read=False,
+        sender_full_name=sender_user.full_name,
+        sender_avatar_url=sender_user.avatar_url,
+        message_type=message.message_type,
+    )
+
+    await manager.broadcast_to_conversation(message_read_instance.model_dump_json(), conversation_id)
+
+    return message_read_instance
 
 async def get_user_from_token(token: str, session: Session) -> Optional[User]:
     if not token:

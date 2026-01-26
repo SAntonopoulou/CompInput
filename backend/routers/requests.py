@@ -5,12 +5,13 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import or_
 from pydantic import BaseModel
 
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist, Conversation, ConversationStatus, Message, MessageType
-from .conversations import manager, MessageRead 
+from .conversations import manager, MessageRead
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -43,6 +44,10 @@ class RequestRead(BaseModel):
     created_at: datetime
     user_id: int
     user_name: str
+    associated_project_id: Optional[int] = None
+    project_title: Optional[str] = None
+    project_description: Optional[str] = None
+    project_funding_goal: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -108,42 +113,63 @@ def list_requests(
     List content requests.
     """
     query = select(Request).options(selectinload(Request.user))
-    
+
     # Exclude cancelled requests by default
     query = query.where(Request.status != RequestStatus.CANCELLED)
 
-    # Base conditions for all users
-    base_conditions = [
-        Request.user_id == current_user.id, # User can always see their own requests
-        Request.is_private == False # Public requests
-    ]
+    # Define statuses for community/teacher visibility
+    visible_statuses = [RequestStatus.OPEN, RequestStatus.NEGOTIATING]
 
+    # A request is visible if:
+    # 1. The current user is the owner (all statuses are visible).
+    # 2. It's a public request and its status is OPEN or NEGOTIATING.
+    # 3. The current user is a TEACHER, it's targeted to them, and its status is OPEN or NEGOTIATING.
+    conditions = [
+        Request.user_id == current_user.id,
+        (Request.is_private == False) & Request.status.in_(visible_statuses),
+    ]
     if current_user.role == UserRole.TEACHER:
-        # Teachers can see requests targeted to them, even if private
-        base_conditions.append(Request.target_teacher_id == current_user.id)
-        # Exclude blacklisted requests for this teacher
+        conditions.append(
+             (Request.target_teacher_id == current_user.id) & Request.status.in_(visible_statuses)
+        )
+
+    query = query.where(or_(*conditions))
+
+    # For teachers, exclude requests they have blacklisted (rejected)
+    if current_user.role == UserRole.TEACHER:
         blacklist_sub = select(RequestBlacklist.request_id).where(RequestBlacklist.teacher_id == current_user.id)
         query = query.where(Request.id.notin_(blacklist_sub))
-    
-    # Combine base conditions with OR
-    query = query.where(
-        (Request.user_id == current_user.id) | # User can always see their own requests
-        (Request.is_private == False) | # Public requests
-        (current_user.role == UserRole.TEACHER and Request.target_teacher_id == current_user.id) # Teachers see targeted private requests
-    )
 
     if language:
         query = query.where(Request.language == language)
     if level:
         query = query.where(Request.level == level)
-        
-    query = query.offset(offset).limit(limit)
-    
+
+    query = query.order_by(Request.created_at.desc()).offset(offset).limit(limit)
+
     requests = session.exec(query).all()
-    
+
     results = []
     for r in requests:
         user_name = r.user.full_name if r.user else "Unknown"
+        
+        project_data = {
+            "associated_project_id": None,
+            "project_title": None,
+            "project_description": None,
+            "project_funding_goal": None
+        }
+
+        if r.status == RequestStatus.ACCEPTED:
+            # Find the project created from this request
+            project = session.exec(select(Project).where(Project.origin_request_id == r.id)).first()
+            if project:
+                project_data["associated_project_id"] = project.id
+                project_data["project_title"] = project.title
+                project_data["project_description"] = project.description
+                project_data["project_funding_goal"] = project.funding_goal
+
+
         results.append(RequestRead(
             id=r.id,
             title=r.title,
@@ -157,9 +183,10 @@ def list_requests(
             is_private=r.is_private,
             created_at=r.created_at,
             user_id=r.user_id,
-            user_name=user_name
+            user_name=user_name,
+            **project_data
         ))
-        
+
     return results
 
 @router.post("/{request_id}/cancel")
