@@ -13,7 +13,7 @@ from pydantic import BaseModel
 import logging
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus, RequestBlacklist
+from ..models import Project, ProjectStatus, User, UserRole, Pledge, PledgeStatus, Notification, Request, RequestStatus, ProjectUpdate, ProjectRating, Video, TeacherVerification, VerificationStatus, RequestBlacklist, LanguageGroup, TeacherFollower
 from ..schemas import (
     ProjectRead, ProjectCreate, ProjectUpdateModel, UpdateCreate, UpdateRead, BackerRead, 
     LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead, MyRatingRead
@@ -33,6 +33,7 @@ class TipRequest(BaseModel):
 # Helper function to create ProjectRead from Project model
 def _create_project_read(project: Project, current_user: Optional[User], session: Session) -> ProjectRead:
     is_backed_by_user = False
+    is_following_teacher = False
     my_rating = None
     if current_user:
         pledge = session.exec(
@@ -43,6 +44,11 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         ).first()
         if pledge:
             is_backed_by_user = True
+        
+        if project.teacher_id:
+            follow = session.get(TeacherFollower, (project.teacher_id, current_user.id))
+            if follow:
+                is_following_teacher = True
         
         if project.status == ProjectStatus.COMPLETED:
             user_rating = session.exec(
@@ -117,6 +123,7 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         is_backed_by_user=is_backed_by_user,
         is_owner=is_owner,
         is_teacher_verified=is_teacher_verified,
+        is_following_teacher=is_following_teacher,
         average_rating=average_rating,
         total_ratings=total_ratings,
         my_rating=my_rating,
@@ -247,6 +254,31 @@ def create_project(
     session.add(project)
     session.commit()
     session.refresh(project)
+
+    # Notify followers
+    teacher = session.get(User, project.teacher_id, options=[selectinload(User.followers)])
+    for follower in teacher.followers:
+        notification = Notification(
+            user_id=follower.id,
+            content=f"Teacher {teacher.full_name} has created a new project: '{project.title}'",
+            link=f"/projects/{project.id}"
+        )
+        session.add(notification)
+
+    # Notify language group members
+    language_group = session.exec(select(LanguageGroup).where(LanguageGroup.language_name == project.language).options(selectinload(LanguageGroup.members))).first()
+    if language_group:
+        for member in language_group.members:
+            if member.id != teacher.id: # Don't notify the teacher about their own project
+                notification = Notification(
+                    user_id=member.id,
+                    content=f"A new project in {project.language} has been posted: '{project.title}'",
+                    link=f"/projects/{project.id}"
+                )
+                session.add(notification)
+    
+    session.commit()
+
     return project
 
 @router.get("/", response_model=PaginatedProjectRead)

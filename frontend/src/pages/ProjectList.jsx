@@ -10,6 +10,7 @@ const ProjectList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [currentUser, setCurrentUser] = useState(null);
   
   const [searchTerm, setSearchTerm] = useState(searchParams.get('search') || '');
   const [language, setLanguage] = useState(searchParams.get('language') || '');
@@ -18,15 +19,20 @@ const ProjectList = () => {
   const { addToast } = useToast();
 
   useEffect(() => {
-    const fetchFilterOptions = async () => {
+    const fetchInitialData = async () => {
       try {
-        const response = await client.get('/projects/filter-options');
-        setAvailableFilters(response.data);
+        const token = localStorage.getItem('token');
+        if (token) {
+          const userRes = await client.get('/users/me');
+          setCurrentUser(userRes.data);
+        }
+        const filtersRes = await client.get('/projects/filter-options');
+        setAvailableFilters(filtersRes.data);
       } catch (err) {
-        console.error("Failed to fetch filter options", err);
+        console.error("Failed to fetch initial data", err);
       }
     };
-    fetchFilterOptions();
+    fetchInitialData();
   }, []);
 
   const fetchProjects = useCallback(async () => {
@@ -66,6 +72,38 @@ const ProjectList = () => {
     if (level) params.set('level', level);
     setSearchParams(params);
   }, [searchTerm, language, level, setSearchParams]);
+
+  const handleFollow = async (teacherId) => {
+    try {
+      await client.post(`/users/${teacherId}/follow`);
+      setProjectData(prevData => ({
+        ...prevData,
+        projects: prevData.projects.map(p => 
+          p.teacher_id === teacherId ? { ...p, is_following_teacher: true } : p
+        )
+      }));
+      addToast("Followed teacher!", "success");
+    } catch (error) {
+      console.error("Failed to follow", error);
+      addToast("Failed to follow teacher.", "error");
+    }
+  };
+
+  const handleUnfollow = async (teacherId) => {
+    try {
+      await client.delete(`/users/${teacherId}/follow`);
+      setProjectData(prevData => ({
+        ...prevData,
+        projects: prevData.projects.map(p => 
+          p.teacher_id === teacherId ? { ...p, is_following_teacher: false } : p
+        )
+      }));
+      addToast("Unfollowed teacher.", "success");
+    } catch (error) {
+      console.error("Failed to unfollow", error);
+      addToast("Failed to unfollow teacher.", "error");
+    }
+  };
 
   const currentLevels = availableFilters.languages.find(l => l.language === language)?.levels || [];
 
@@ -115,7 +153,13 @@ const ProjectList = () => {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {projectData.projects.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard 
+              key={project.id} 
+              project={project}
+              currentUser={currentUser}
+              onFollow={handleFollow}
+              onUnfollow={handleUnfollow}
+            />
           ))}
         </div>
       )}

@@ -27,6 +27,7 @@ import Archive from './pages/Archive';
 import ArchivedConversations from './pages/ArchivedConversations';
 import TeacherArchive from './pages/TeacherArchive';
 import StudentArchive from './pages/student/Archive'; // Import the new component
+import Groups from './pages/Groups'; // Import the new Groups component
 
 function App() {
   const token = localStorage.getItem('token');
@@ -43,6 +44,7 @@ function App() {
                 <Route path="/login" element={<Login />} />
                 <Route path="/register" element={<Register />} />
                 <Route path="/archive" element={<Archive />} />
+                <Route path="/groups" element={<Groups />} /> {/* New Groups route */}
 
                 {/* Protected Routes */}
                 <Route element={<ProtectedRoute />}>

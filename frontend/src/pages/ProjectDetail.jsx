@@ -96,6 +96,28 @@ const ProjectDetail = () => {
     fetchData();
   }, [id, token, navigate, addToast]);
 
+  const handleFollow = async (teacherId) => {
+    try {
+      await client.post(`/users/${teacherId}/follow`);
+      setProject(prev => ({ ...prev, is_following_teacher: true }));
+      addToast("Followed teacher!", "success");
+    } catch (error) {
+      console.error("Failed to follow", error);
+      addToast("Failed to follow teacher.", "error");
+    }
+  };
+
+  const handleUnfollow = async (teacherId) => {
+    try {
+      await client.delete(`/users/${teacherId}/follow`);
+      setProject(prev => ({ ...prev, is_following_teacher: false }));
+      addToast("Unfollowed teacher.", "success");
+    } catch (error) {
+      console.error("Failed to unfollow", error);
+      addToast("Failed to unfollow teacher.", "error");
+    }
+  };
+
   const handleConfirmCompletion = async () => {
     try {
       const res = await client.post(`/projects/${id}/confirm-completion`);
@@ -188,6 +210,8 @@ const ProjectDetail = () => {
   const isOwner = currentUser && currentUser.id === project.teacher_id;
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
   const canRate = project.is_backed_by_user && project.status === 'completed';
+  const isFollowing = project.is_following_teacher;
+  const canFollow = currentUser && currentUser.id !== project.teacher_id;
 
   let deliveryText = null;
   if (project.delivery_days) {
@@ -239,10 +263,17 @@ const ProjectDetail = () => {
             <span className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-green-100 text-green-800">{project.level}</span>
             {tags.map((tag, index) => <span key={index} className="inline-flex items-center px-3 py-0.5 rounded-full text-sm font-medium bg-gray-100 text-gray-800">{tag}</span>)}
           </div>
-          <div className="mb-6 text-gray-500 text-sm">
+          <div className="mb-6 text-gray-500 text-sm flex items-center gap-4">
             <p className="flex items-center">By <Link to={`/profile/${project.teacher_id}`} className="text-indigo-600 hover:underline ml-1">{project.teacher_name}</Link><VerifiedBadge languages={project.teacher_verified_languages} /></p>
-            {project.requester_name && <p className="mt-1">Requested by {project.requester_name}</p>}
+            {canFollow && (
+              isFollowing ? (
+                <button onClick={() => handleUnfollow(project.teacher_id)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-sm font-medium">Unfollow</button>
+              ) : (
+                <button onClick={() => handleFollow(project.teacher_id)} className="bg-indigo-600 text-white px-3 py-1 rounded-md text-sm font-medium">Follow</button>
+              )
+            )}
           </div>
+          {project.requester_name && <p className="mt-1">Requested by {project.requester_name}</p>}
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
 
           {project.is_series && (
@@ -388,7 +419,7 @@ const ProjectDetail = () => {
         </div>
       </div>
 
-      {relatedProjects.length > 0 && (<div className="mt-12 border-t border-gray-200 pt-12"><h2 className="text-2xl font-bold text-gray-900 mb-6">More Like This</h2><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{relatedProjects.map(p => (<ProjectCard key={p.id} project={p} />))}</div></div>)}
+      {relatedProjects.length > 0 && (<div className="mt-12 border-t border-gray-200 pt-12"><h2 className="text-2xl font-bold text-gray-900 mb-6">More Like This</h2><div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">{relatedProjects.map(p => (<ProjectCard key={p.id} project={p} currentUser={currentUser} onFollow={handleFollow} />))}</div></div>)}
       {showVideoModal && (<LinkVideoModal projectId={id} onClose={() => setShowVideoModal(false)} onSuccess={handleVideoLinkSuccess} />)}
       {showResourceModal && (<AddResourceModal videoId={selectedVideoId} onClose={() => setShowResourceModal(false)} onSuccess={handleAddResourceSuccess} />)}
     </div>

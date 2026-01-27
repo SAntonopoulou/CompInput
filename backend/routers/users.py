@@ -5,12 +5,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select, func
 from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, or_
 from pydantic import BaseModel
 from collections import defaultdict
 
 from ..database import get_session
 from ..deps import get_current_user, get_current_user_optional
-from ..models import User, UserRole, Project, Pledge, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification, Conversation, Message, RequestBlacklist
+from ..models import User, UserRole, Project, Pledge, PledgeStatus, Request, ProjectStatus, ProjectRating, TeacherVerification, VerificationStatus, VideoComment, Notification, Conversation, Message, RequestBlacklist, TeacherFollower, LanguageGroup
 from ..schemas import LanguageLevelsRead, FilterOptionsRead, PaginatedProjectRead, ProjectRead
 from ..routers.projects import _cancel_project_logic, _create_project_read
 
@@ -39,6 +40,9 @@ class UserProfile(BaseModel):
     sample_video_url: Optional[str] = None
     avatar_url: Optional[str] = None
     verified_languages: List[str] = []
+    language_groups: List[str] = []
+    follower_count: int = 0
+    is_following: bool = False
 
     class Config:
         from_attributes = True
@@ -66,6 +70,19 @@ class TeacherRatingRead(BaseModel):
     project: ProjectInfoForRating
     teacher_response: Optional[str] = None
     response_created_at: Optional[datetime] = None
+
+class FollowerRead(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: Optional[str]
+    total_pledged: int
+
+class FollowingTeacherRead(BaseModel):
+    id: int
+    full_name: str
+    avatar_url: Optional[str]
+    total_pledged: int
+
 
 # API Endpoints
 @router.get("/me", response_model=User)
@@ -185,15 +202,18 @@ def delete_me(
 @router.get("/{user_id}/profile", response_model=UserProfile)
 def get_user_profile(
     user_id: int,
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    user = session.get(User, user_id)
+    user = session.get(User, user_id, options=[selectinload(User.language_groups)])
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
     average_rating = None
     verified_languages = []
+    follower_count = 0
     if user.role == UserRole.TEACHER:
+        # Calculate average rating
         rating_statement = select(func.avg(ProjectRating.rating)).join(Project).where(Project.teacher_id == user.id)
         avg_rating_result = session.exec(rating_statement).first()
         if avg_rating_result:
@@ -204,6 +224,16 @@ def get_user_profile(
             TeacherVerification.status == VerificationStatus.APPROVED
         )
         verified_languages = session.exec(verification_statement).all()
+
+        # Calculate follower count
+        follower_count = session.exec(
+            select(func.count(TeacherFollower.student_id))
+            .where(TeacherFollower.teacher_id == user.id)
+        ).one()
+
+    is_following = False
+    if current_user and current_user.id != user.id:
+        is_following = session.get(TeacherFollower, (user.id, current_user.id)) is not None
 
     return UserProfile(
         id=user.id,
@@ -216,8 +246,167 @@ def get_user_profile(
         intro_video_url=user.intro_video_url,
         sample_video_url=user.sample_video_url,
         avatar_url=user.avatar_url,
-        verified_languages=verified_languages
+        verified_languages=verified_languages,
+        language_groups=[group.language_name for group in user.language_groups],
+        follower_count=follower_count,
+        is_following=is_following
     )
+
+@router.post("/{teacher_id}/follow", status_code=status.HTTP_204_NO_CONTENT)
+def follow_teacher(
+    teacher_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    if current_user.id == teacher_id:
+        raise HTTPException(status_code=400, detail="You cannot follow yourself.")
+    
+    teacher = session.get(User, teacher_id)
+    if not teacher or teacher.role != UserRole.TEACHER:
+        raise HTTPException(status_code=404, detail="Teacher not found.")
+
+    follow = session.get(TeacherFollower, (teacher_id, current_user.id))
+    if follow:
+        return
+
+    new_follow = TeacherFollower(teacher_id=teacher_id, student_id=current_user.id)
+    session.add(new_follow)
+
+    # Notify the teacher
+    notification = Notification(
+        user_id=teacher_id,
+        content=f"{current_user.full_name} is now following you.",
+        link=f"/profile/{current_user.id}"
+    )
+    session.add(notification)
+    session.commit()
+
+@router.delete("/{teacher_id}/follow", status_code=status.HTTP_204_NO_CONTENT)
+def unfollow_teacher(
+    teacher_id: int,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    follow = session.get(TeacherFollower, (teacher_id, current_user.id))
+    if not follow:
+        return
+
+    session.delete(follow)
+    session.commit()
+
+@router.get("/{teacher_id}/followers", response_model=List[FollowerRead])
+def get_teacher_followers(
+    teacher_id: int,
+    limit: int = 10,
+    offset: int = 0,
+    session: Session = Depends(get_session)
+):
+    teacher = session.get(User, teacher_id)
+    if not teacher or teacher.role != UserRole.TEACHER:
+        raise HTTPException(status_code=404, detail="Teacher not found.")
+
+    followers_statement = (
+        select(User, func.sum(Pledge.amount).label("total_pledged"))
+        .join(TeacherFollower, User.id == TeacherFollower.student_id)
+        .join(Pledge, and_(User.id == Pledge.user_id, Pledge.status == PledgeStatus.CAPTURED), isouter=True)
+        .join(Project, and_(Pledge.project_id == Project.id, Project.teacher_id == teacher_id), isouter=True)
+        .where(TeacherFollower.teacher_id == teacher_id)
+        .group_by(User.id)
+        .order_by(func.sum(Pledge.amount).desc().nulls_last())
+        .limit(limit)
+        .offset(offset)
+    )
+    
+    results = session.exec(followers_statement).all()
+    
+    return [
+        FollowerRead(
+            id=user.id,
+            full_name=user.full_name,
+            avatar_url=user.avatar_url,
+            total_pledged=total_pledged or 0
+        ) for user, total_pledged in results
+    ]
+
+@router.get("/{user_id}/following", response_model=List[FollowingTeacherRead])
+def get_user_following(
+    user_id: int,
+    session: Session = Depends(get_session)
+):
+    """
+    Get a list of teachers a specific user is following, ranked by how much that user has pledged to them.
+    """
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    statement = (
+        select(
+            User,
+            func.sum(Pledge.amount).label("total_pledged")
+        )
+        .join(TeacherFollower, User.id == TeacherFollower.teacher_id)
+        .join(
+            Project,
+            User.id == Project.teacher_id,
+            isouter=True
+        )
+        .join(
+            Pledge,
+            and_(
+                Project.id == Pledge.project_id,
+                Pledge.user_id == user_id, # Use the user_id from the path
+                Pledge.status == PledgeStatus.CAPTURED
+            ),
+            isouter=True
+        )
+        .where(TeacherFollower.student_id == user_id) # Use the user_id from the path
+        .group_by(User.id)
+        .order_by(func.sum(Pledge.amount).desc().nulls_last())
+    )
+    results = session.exec(statement).all()
+    return [
+        FollowingTeacherRead(id=teacher.id, full_name=teacher.full_name, avatar_url=teacher.avatar_url, total_pledged=total_pledged or 0)
+        for teacher, total_pledged in results
+    ]
+
+@router.get("/me/following", response_model=List[FollowingTeacherRead])
+def get_my_following(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session)
+):
+    """
+    Get a list of teachers the current user is following, ranked by how much they have pledged to them.
+    """
+    statement = (
+        select(
+            User,
+            func.sum(Pledge.amount).label("total_pledged")
+        )
+        .join(TeacherFollower, User.id == TeacherFollower.teacher_id)
+        .join(
+            Project,
+            User.id == Project.teacher_id,
+            isouter=True
+        )
+        .join(
+            Pledge,
+            and_(
+                Project.id == Pledge.project_id,
+                Pledge.user_id == current_user.id,
+                Pledge.status == PledgeStatus.CAPTURED
+            ),
+            isouter=True
+        )
+        .where(TeacherFollower.student_id == current_user.id)
+        .group_by(User.id)
+        .order_by(func.sum(Pledge.amount).desc().nulls_last())
+    )
+    results = session.exec(statement).all()
+    return [
+        FollowingTeacherRead(id=teacher.id, full_name=teacher.full_name, avatar_url=teacher.avatar_url, total_pledged=total_pledged or 0)
+        for teacher, total_pledged in results
+    ]
 
 @router.get("/{user_id}/backed-projects", response_model=PaginatedProjectRead)
 def get_user_backed_projects(

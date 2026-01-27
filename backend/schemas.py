@@ -128,6 +128,7 @@ class ProjectRead(BaseModel):
     is_backed_by_user: bool = False
     is_owner: bool = False
     is_teacher_verified: bool = False
+    is_following_teacher: bool = False
     average_rating: Optional[float] = None
     total_ratings: int = 0
     my_rating: Optional[MyRatingRead] = None

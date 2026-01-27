@@ -4,7 +4,7 @@ import { getVideoThumbnail } from '../utils/video';
 import VerifiedBadge from './VerifiedBadge';
 import defaultProjectImage from '../assets/default_project_image.svg';
 
-const ProjectCard = ({ project }) => {
+const ProjectCard = ({ project, currentUser, onFollow, onUnfollow }) => {
   const percentage = project.funding_goal > 0 ? (project.current_funding / project.funding_goal) * 100 : 0;
 
   let imageUrl = defaultProjectImage;
@@ -13,6 +13,19 @@ const ProjectCard = ({ project }) => {
   } else if (!project.is_series && project.videos && project.videos.length > 0) {
     imageUrl = getVideoThumbnail(project.videos[0]);
   }
+
+  const isFollowing = project.is_following_teacher;
+  const canFollow = currentUser && currentUser.id !== project.teacher_id;
+
+  const handleFollowClick = (e) => {
+    e.preventDefault();
+    onFollow(project.teacher_id);
+  };
+
+  const handleUnfollowClick = (e) => {
+    e.preventDefault();
+    onUnfollow(project.teacher_id);
+  };
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col h-full">
@@ -63,6 +76,13 @@ const ProjectCard = ({ project }) => {
               </div>
               <p className="text-sm text-gray-500">{project.language} - {project.level}</p>
             </div>
+            {canFollow && (
+              isFollowing ? (
+                <button onClick={handleUnfollowClick} className="bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-sm font-medium">Unfollow</button>
+              ) : (
+                <button onClick={handleFollowClick} className="bg-indigo-600 text-white px-3 py-1 rounded-md text-sm font-medium">Follow</button>
+              )
+            )}
           </div>
         </div>
       </div>

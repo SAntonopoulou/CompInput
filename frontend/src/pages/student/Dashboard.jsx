@@ -10,12 +10,13 @@ const StudentDashboard = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const fetchPledges = useCallback(async () => {
+  const fetchData = useCallback(async () => {
+    setLoading(true);
     try {
-      const response = await client.get('/pledges/me');
-      setPledges(response.data);
+      const pledgesRes = await client.get('/pledges/me');
+      setPledges(pledgesRes.data);
     } catch (error) {
-      console.error("Failed to fetch pledges", error);
+      console.error("Failed to fetch dashboard data", error);
       addToast("Could not load your pledges.", "error");
     } finally {
       setLoading(false);
@@ -30,20 +31,20 @@ const StudentDashboard = () => {
       navigate(location.pathname, { replace: true });
 
       const timer = setTimeout(() => {
-        fetchPledges();
+        fetchData();
       }, 3000);
 
       return () => clearTimeout(timer);
     } else {
-      fetchPledges();
+      fetchData();
     }
-  }, [location, navigate, addToast, fetchPledges]);
+  }, [location, navigate, addToast, fetchData]);
 
   const handleConfirmCompletion = async (projectId) => {
     try {
       await client.post(`/projects/${projectId}/confirm-completion`);
       addToast("Project completion confirmed! You can now rate the project.", "success");
-      fetchPledges();
+      fetchData();
     } catch (error) {
       console.error("Failed to confirm completion", error);
       addToast(error.response?.data?.detail || "Failed to confirm completion.", "error");
@@ -143,6 +144,7 @@ const StudentDashboard = () => {
           </table>
         </div>
       )}
+
     </div>
   );
 };

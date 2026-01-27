@@ -20,6 +20,24 @@ const Profile = () => {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ bio: '', languages: '', intro_video_url: '', sample_video_url: '', avatar_url: '' });
+  const [followers, setFollowers] = useState([]);
+  const [followerOffset, setFollowerOffset] = useState(0);
+  const [hasMoreFollowers, setHasMoreFollowers] = useState(true);
+  const [following, setFollowing] = useState([]);
+
+  const fetchFollowers = async (offset = 0) => {
+    try {
+      const res = await client.get(`/users/${id}/followers`, { params: { limit: 10, offset } });
+      if (res.data.length > 0) {
+        setFollowers(prev => offset === 0 ? res.data : [...prev, ...res.data]);
+      }
+      if (res.data.length < 10) {
+        setHasMoreFollowers(false);
+      }
+    } catch (error) {
+      console.error("Failed to fetch followers", error);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,6 +63,10 @@ const Profile = () => {
         if (profileRes.data.role === 'teacher') {
             const projectsRes = await client.get(`/users/${id}/completed-projects`, { params: { limit: 2 } });
             setProjectData(projectsRes.data);
+            fetchFollowers();
+        } else if (profileRes.data.role === 'student') {
+            const followingRes = await client.get(`/users/${id}/following`);
+            setFollowing(followingRes.data);
         } else if (profileRes.data.role === 'student') {
             const projectsRes = await client.get(`/users/${id}/backed-projects`, { params: { limit: 2 } });
             setProjectData(projectsRes.data);
@@ -69,6 +91,44 @@ const Profile = () => {
           alert("Failed to update profile");
       }
   };
+
+  const handleFollow = async (teacherId) => {
+    try {
+      await client.post(`/users/${teacherId}/follow`);
+      if (teacherId === parseInt(id)) {
+        setProfile(prev => ({ ...prev, is_following: true, follower_count: prev.follower_count + 1 }));
+      }
+    } catch (error) {
+      console.error("Failed to follow", error);
+    }
+  };
+
+  const handleUnfollow = async (teacherId) => {
+    try {
+      await client.delete(`/users/${teacherId}/follow`);
+      // If we are on the teacher's profile that we just unfollowed
+      if (teacherId === parseInt(id)) {
+        setProfile(prev => ({ ...prev, is_following: false, follower_count: prev.follower_count - 1 }));
+      }
+      // If we are on our own student profile, update the list of teachers we are following
+      if (currentUser && currentUser.id === parseInt(id) && profile.role === 'student') {
+        setFollowing(prev => prev.filter(t => t.id !== teacherId));
+      }
+    } catch (error) {
+      console.error("Failed to unfollow", error);
+    }
+  };
+
+  const loadMoreFollowers = () => {
+    const newOffset = followerOffset + 10;
+    setFollowerOffset(newOffset);
+    fetchFollowers(newOffset);
+  };
+
+  const formatCurrency = (amountInCents) => new Intl.NumberFormat('de-DE', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amountInCents / 100);
 
   if (loading) return <div className="p-10 text-center">Loading profile...</div>;
   if (!profile) return <div className="p-10 text-center">User not found</div>;
@@ -104,7 +164,15 @@ const Profile = () => {
                 </p>
             </div>
           </div>
-          {isOwner && <button onClick={() => setIsEditing(!isEditing)} className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">{isEditing ? 'Cancel' : 'Edit Profile'}</button>}
+          {isOwner ? (
+            <button onClick={() => setIsEditing(!isEditing)} className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">{isEditing ? 'Cancel' : 'Edit Profile'}</button>
+          ) : currentUser && profile.role === 'teacher' && (
+            profile.is_following ? (
+              <button onClick={() => handleUnfollow(profile.id)} className="bg-gray-200 text-gray-700 px-3 py-1 rounded-md text-sm font-medium">Unfollow</button>
+            ) : (
+              <button onClick={() => handleFollow(profile.id)} className="bg-indigo-600 text-white px-3 py-1 rounded-md text-sm font-medium">Follow</button>
+            )
+          )}
         </div>
 
         <div className="border-t border-gray-200 px-4 py-5 sm:p-0">
@@ -151,10 +219,43 @@ const Profile = () => {
               <dt className="text-sm font-medium text-gray-500">Joined</dt>
               <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{new Date(profile.created_at).toLocaleDateString()}</dd>
             </div>
+            <div className="py-4 sm:py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+              <dt className="text-sm font-medium text-gray-500">Language Groups</dt>
+              <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{profile.language_groups.join(', ') || 'Not a member of any groups.'}</dd>
+            </div>
           </dl>
         </div>
         {isEditing && <div className="px-4 py-3 bg-gray-50 text-right sm:px-6"><button onClick={handleUpdate} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">Save</button></div>}
       </div>
+
+      {profile.role === 'teacher' && (
+        <div className="mt-8">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Followers ({profile.follower_count})</h3>
+          {followers.length > 0 ? (
+            <div>
+              <div className="flex flex-wrap gap-2">
+                {followers.map(follower => (
+                  <div key={follower.id} className="relative group">
+                    <img 
+                      src={follower.avatar_url || `https://ui-avatars.com/api/?name=${follower.full_name}&background=random`} 
+                      alt={follower.full_name} 
+                      className="h-12 w-12 rounded-full object-cover" 
+                    />
+                    <div className="absolute bottom-full mb-2 w-max px-2 py-1 bg-gray-800 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      {follower.full_name}
+                      <br />
+                      Pledged: €{(follower.total_pledged / 100).toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {hasMoreFollowers && (
+                <button onClick={loadMoreFollowers} className="w-full text-center text-indigo-600 hover:underline mt-4">Show More</button>
+              )}
+            </div>
+          ) : <p className="text-gray-500">No followers yet.</p>}
+        </div>
+      )}
 
       <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-8">
         {!isEditing && profile.intro_video_url && (
@@ -172,6 +273,39 @@ const Profile = () => {
         )}
       </div>
 
+      {profile.role === 'student' && (
+        <div className="mt-8">
+          <h3 className="text-lg font-medium text-gray-900 mb-4">Following</h3>
+          {following.length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+              {following.map(teacher => (
+                <div key={teacher.id} className="relative bg-white p-4 rounded-lg shadow-md flex flex-col items-center text-center hover:shadow-lg transition-shadow group">
+                  <Link to={`/profile/${teacher.id}`} className="contents">
+                  <img 
+                    src={teacher.avatar_url || `https://ui-avatars.com/api/?name=${teacher.full_name}&background=random`} 
+                    alt={teacher.full_name} 
+                    className="w-20 h-20 rounded-full object-cover mb-4"
+                  />
+                  <p className="font-semibold text-gray-800">{teacher.full_name}</p>
+                  <div className="mt-2 text-sm text-gray-600">
+                    <p>You Pledged:</p>
+                    <p className="font-bold">{formatCurrency(teacher.total_pledged)}</p>
+                  </div>
+                  </Link>
+                  {isOwner && (
+                    <button onClick={() => handleUnfollow(teacher.id)} className="absolute top-1 right-1 bg-red-100 text-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+                      Unfollow
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">Not following any teachers yet.</p>
+          )}
+        </div>
+      )}
+
       {profile.role === 'teacher' && (
           <div className="mt-8">
               <div className="flex justify-between items-center mb-4">
@@ -185,7 +319,13 @@ const Profile = () => {
               {projectData.projects.length > 0 ? (
                   <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                       {projectData.projects.map(project => (
-                          <ProjectCard key={project.id} project={project} />
+                          <ProjectCard 
+                            key={project.id} 
+                            project={project} 
+                            currentUser={currentUser}
+                            onFollow={handleFollow}
+                            onUnfollow={handleUnfollow}
+                          />
                       ))}
                   </div>
               ) : (<p className="text-gray-500">This teacher has no completed projects yet.</p>)}
@@ -205,7 +345,13 @@ const Profile = () => {
               {projectData.projects.length > 0 ? (
                   <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
                       {projectData.projects.map(project => (
-                          <ProjectCard key={project.id} project={project} />
+                          <ProjectCard 
+                            key={project.id} 
+                            project={project} 
+                            currentUser={currentUser}
+                            onFollow={handleFollow}
+                            onUnfollow={handleUnfollow}
+                          />
                       ))}
                   </div>
               ) : (<p className="text-gray-500">This user has not backed any projects yet.</p>)}

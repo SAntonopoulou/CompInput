@@ -12,15 +12,18 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [verifications, setVerifications] = useState([]);
   const [newVerification, setNewVerification] = useState({ language: '', document_url: '' });
+  const [myGroups, setMyGroups] = useState([]);
 
   const fetchUserData = useCallback(async () => {
     try {
       const userRes = await client.get('/users/me');
       setUser(userRes.data);
       if (userRes.data.role === 'teacher') {
-        const verificationsRes = await client.get('/verifications/'); // Fetch all verifications for the current teacher
+        const verificationsRes = await client.get('/verifications/');
         setVerifications(verificationsRes.data);
       }
+      const myGroupsRes = await client.get('/language-groups/me');
+      setMyGroups(myGroupsRes.data);
     } catch (error) {
       console.error("Failed to fetch user data", error);
       addToast("Could not load user data.", "error");
@@ -72,6 +75,16 @@ const Settings = () => {
     }
   };
 
+  const handleLeaveGroup = async (groupId) => {
+    try {
+      await client.delete(`/language-groups/${groupId}/join`);
+      addToast("Successfully left group.", "success");
+      fetchUserData();
+    } catch (error) {
+      addToast("Failed to leave group.", "error");
+    }
+  };
+
   const getStatusClasses = (status) => {
     switch (status) {
       case 'approved': return 'bg-green-100 text-green-800';
@@ -86,6 +99,24 @@ const Settings = () => {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
+
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">My Language Groups</h3>
+          {myGroups.length > 0 ? (
+            <ul className="mt-2 border border-gray-200 rounded-md divide-y divide-gray-200">
+              {myGroups.map(group => (
+                <li key={group.id} className="pl-3 pr-4 py-3 flex items-center justify-between text-sm">
+                  <span className="font-medium">{group.language_name}</span>
+                  <button onClick={() => handleLeaveGroup(group.id)} className="ml-4 text-red-600 hover:text-red-800 font-semibold">Leave</button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-2 text-sm text-gray-500">You are not a member of any language groups yet.</p>
+          )}
+        </div>
+      </div>
 
       {user && user.role === 'teacher' && (
         <>

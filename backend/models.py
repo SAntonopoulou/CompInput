@@ -51,7 +51,22 @@ class OfferStatus(str, Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
 
+# Association table for User and LanguageGroup
+class UserLanguageGroup(SQLModel, table=True):
+    user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
+    group_id: Optional[int] = Field(default=None, foreign_key="languagegroup.id", primary_key=True)
+
 # Database Models
+class LanguageGroup(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    language_name: str = Field(unique=True, index=True)
+    
+    members: List["User"] = Relationship(back_populates="language_groups", link_model=UserLanguageGroup)
+
+class TeacherFollower(SQLModel, table=True):
+    teacher_id: int = Field(foreign_key="user.id", primary_key=True)
+    student_id: int = Field(foreign_key="user.id", primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 class User(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -82,7 +97,28 @@ class User(SQLModel, table=True):
     video_comments: List["VideoComment"] = Relationship(back_populates="user")
     verifications: List["TeacherVerification"] = Relationship(back_populates="teacher")
 
-    # New relationships for messaging
+    # Follower relationships
+    followers: List["User"] = Relationship(
+        back_populates="following",
+        link_model=TeacherFollower,
+        sa_relationship_kwargs=dict(
+            primaryjoin="User.id==TeacherFollower.teacher_id",
+            secondaryjoin="User.id==TeacherFollower.student_id",
+        ),
+    )
+    following: List["User"] = Relationship(
+        back_populates="followers",
+        link_model=TeacherFollower,
+        sa_relationship_kwargs=dict(
+            primaryjoin="User.id==TeacherFollower.student_id",
+            secondaryjoin="User.id==TeacherFollower.teacher_id",
+        ),
+    )
+
+    # Language group relationship
+    language_groups: List["LanguageGroup"] = Relationship(back_populates="members", link_model=UserLanguageGroup)
+
+    # Messaging relationships
     sent_messages: List["Message"] = Relationship(back_populates="sender")
     conversations_as_teacher: List["Conversation"] = Relationship(back_populates="teacher", sa_relationship_kwargs={"foreign_keys": "Conversation.teacher_id"})
     conversations_as_student: List["Conversation"] = Relationship(back_populates="student", sa_relationship_kwargs={"foreign_keys": "Conversation.student_id"})
