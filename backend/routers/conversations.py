@@ -428,16 +428,9 @@ async def send_message(
     recipient_id = conversation.student_id if current_user.id == conversation.teacher_id else conversation.teacher_id
     if recipient_id != current_user.id:
         # Only send notification if the recipient is NOT currently in this conversation
-        if not manager.is_user_in_conversation(recipient_id, conversation_id):
-            # Calculate new unread count for the recipient
-            unread_count = session.exec(
-                select(func.count(Message.id))
-                .where(Message.conversation_id == conversation.id)
-                .where(Message.sender_id != recipient_id)
-                .where(Message.is_read == False)
-            ).one()
-            notification_payload = json.dumps({"type": "UNREAD_COUNT_UPDATE", "unread_count": unread_count})
-            await manager.send_user_notification(recipient_id, notification_payload)
+        # The global websocket just pings the client to re-fetch its state.
+        notification_payload = json.dumps({"type": "NEW_MESSAGE_ALERT"})
+        await manager.send_user_notification(recipient_id, notification_payload)
 
     return message_read_instance
 

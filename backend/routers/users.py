@@ -370,44 +370,6 @@ def get_user_following(
         for teacher, total_pledged in results
     ]
 
-@router.get("/me/following", response_model=List[FollowingTeacherRead])
-def get_my_following(
-    current_user: User = Depends(get_current_user),
-    session: Session = Depends(get_session)
-):
-    """
-    Get a list of teachers the current user is following, ranked by how much they have pledged to them.
-    """
-    statement = (
-        select(
-            User,
-            func.sum(Pledge.amount).label("total_pledged")
-        )
-        .join(TeacherFollower, User.id == TeacherFollower.teacher_id)
-        .join(
-            Project,
-            User.id == Project.teacher_id,
-            isouter=True
-        )
-        .join(
-            Pledge,
-            and_(
-                Project.id == Pledge.project_id,
-                Pledge.user_id == current_user.id,
-                Pledge.status == PledgeStatus.CAPTURED
-            ),
-            isouter=True
-        )
-        .where(TeacherFollower.student_id == current_user.id)
-        .group_by(User.id)
-        .order_by(func.sum(Pledge.amount).desc().nulls_last())
-    )
-    results = session.exec(statement).all()
-    return [
-        FollowingTeacherRead(id=teacher.id, full_name=teacher.full_name, avatar_url=teacher.avatar_url, total_pledged=total_pledged or 0)
-        for teacher, total_pledged in results
-    ]
-
 @router.get("/{user_id}/backed-projects", response_model=PaginatedProjectRead)
 def get_user_backed_projects(
     user_id: int,
