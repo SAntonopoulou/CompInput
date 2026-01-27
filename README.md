@@ -190,8 +190,5 @@
  ```
  
  This will output a `whsec_...` secret. Copy this secret and add it to your `backend/.env` file as `STRIPE_WEBHOOK_SECRET`.
- 
- ## Contributing
- 
- ... (Instructions for contributing)
+
  
