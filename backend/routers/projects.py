@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import or_
 import os
 import stripe
+from pydantic import BaseModel
 
 import logging
 from ..database import get_session
@@ -22,8 +23,12 @@ logger = logging.getLogger(__name__)
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 PLATFORM_FEE_PERCENT = float(os.getenv("PLATFORM_FEE_PERCENT", "0.15"))
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+class TipRequest(BaseModel):
+    amount: int
 
 # Helper function to create ProjectRead from Project model
 def _create_project_read(project: Project, current_user: Optional[User], session: Session) -> ProjectRead:
@@ -52,6 +57,7 @@ def _create_project_read(project: Project, current_user: Optional[User], session
 
     teacher_name = project.teacher.full_name if project.teacher else "Unknown"
     teacher_avatar_url = project.teacher.avatar_url if project.teacher else None
+    teacher_stripe_account_id = project.teacher.stripe_account_id if project.teacher else None
 
     # Fetch average rating and total ratings
     avg_rating_result = session.exec(
@@ -90,15 +96,19 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         tags=project.tags,
         funding_goal=project.funding_goal,
         current_funding=project.current_funding,
+        total_tipped_amount=project.total_tipped_amount,
         deadline=project.deadline,
         delivery_days=project.delivery_days,
         status=project.status,
         is_private=project.is_private,
         created_at=project.created_at,
         updated_at=project.updated_at,
+        funded_at=project.funded_at,
+        completed_at=project.completed_at,
         teacher_id=project.teacher_id,
         teacher_name=teacher_name,
         teacher_avatar_url=teacher_avatar_url,
+        teacher_stripe_account_id=teacher_stripe_account_id,
         teacher_verified_languages=teacher_verified_languages,
         origin_request_id=project.origin_request_id,
         origin_request_title=origin_request_title,
@@ -113,7 +123,8 @@ def _create_project_read(project: Project, current_user: Optional[User], session
         is_series=project.is_series,
         num_videos=project.num_videos,
         price_per_video=project.price_per_video,
-        project_image_url=project.project_image_url
+        project_image_url=project.project_image_url,
+        series_intro_video_url=project.series_intro_video_url
     )
 
 
@@ -323,6 +334,61 @@ def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
             
     return _create_project_read(project, current_user, session)
+
+@router.post("/{project_id}/tip")
+def create_tip_checkout_session(
+    project_id: int,
+    tip_in: TipRequest,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user)
+):
+    project = session.exec(
+        select(Project).where(Project.id == project_id).options(selectinload(Project.teacher))
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    teacher = project.teacher
+    if not teacher or not teacher.stripe_account_id:
+        raise HTTPException(status_code=400, detail="This teacher is not set up to receive payments.")
+
+    if tip_in.amount < 100: # Minimum tip amount of 1 EUR
+        raise HTTPException(status_code=400, detail="Tip amount must be at least €1.00")
+
+    application_fee = int(tip_in.amount * PLATFORM_FEE_PERCENT)
+
+    try:
+        checkout_session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{
+                'price_data': {
+                    'currency': 'eur',
+                    'product_data': {
+                        'name': f"Tip for '{project.title}'",
+                    },
+                    'unit_amount': tip_in.amount,
+                },
+                'quantity': 1,
+            }],
+            mode='payment',
+            success_url=f"{FRONTEND_URL}/projects/{project.id}?tip_success=true",
+            cancel_url=f"{FRONTEND_URL}/projects/{project.id}",
+            payment_intent_data={
+                'application_fee_amount': application_fee,
+                'transfer_data': {
+                    'destination': teacher.stripe_account_id,
+                },
+            },
+            metadata={
+                "type": "tip",
+                "project_id": project.id,
+                "teacher_id": teacher.id,
+                "user_id": current_user.id
+            }
+        )
+        return {"checkout_url": checkout_session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{project_id}/backers", response_model=List[BackerRead])
 def get_project_backers(project_id: int, session: Session = Depends(get_session)):

@@ -149,49 +149,73 @@ def get_user_pledges(
     return results
 
 def handle_checkout_session_completed(session: Session, data_object: dict):
-    client_reference_id = data_object.get('client_reference_id')
-    if not client_reference_id:
-        logger.error("Webhook error: checkout.session.completed event is missing 'client_reference_id'.")
-        return
+    metadata = data_object.get('metadata', {})
+    if metadata.get('type') == 'tip':
+        try:
+            teacher_id = int(metadata['teacher_id'])
+            project_id = int(metadata['project_id'])
+            amount = data_object.get('amount_total', 0)
+            
+            project = session.get(Project, project_id)
+            if project:
+                project.total_tipped_amount += amount
+                session.add(project)
 
-    try:
-        pledge_id = int(client_reference_id)
-        pledge = session.get(Pledge, pledge_id)
-        if not pledge or pledge.status != PledgeStatus.PENDING:
-            status = pledge.status if pledge else 'Not Found'
-            logger.warning(f"Webhook for non-pending or non-existent pledge ID: {pledge_id}. Status: {status}")
+                notification = Notification(
+                    user_id=teacher_id,
+                    content=f"You received a tip of €{amount / 100:.2f} for your project '{project.title}'!",
+                    link=f"/projects/{project_id}"
+                )
+                session.add(notification)
+                session.commit()
+        except (KeyError, ValueError, TypeError) as e:
+            logger.error(f"Error processing tip webhook: Missing or invalid metadata. {e}\n{traceback.format_exc()}")
+            session.rollback()
+    else:
+        client_reference_id = data_object.get('client_reference_id')
+        if not client_reference_id:
+            logger.error("Webhook error: checkout.session.completed event is missing 'client_reference_id' for a pledge.")
             return
 
-        pledge.status = PledgeStatus.CAPTURED
-        pledge.payment_intent_id = data_object.get('payment_intent')
-        
-        project = session.get(Project, pledge.project_id)
-        if project:
-            project.current_funding += pledge.amount
-            session.add(project)
-            
-            notification = Notification(
-                user_id=project.teacher_id,
-                content=f"You received a new pledge of €{pledge.amount/100:.2f} for your project '{project.title}'!",
-                link=f"/projects/{project.id}"
-            )
-            session.add(notification)
+        try:
+            pledge_id = int(client_reference_id)
+            pledge = session.get(Pledge, pledge_id)
+            if not pledge or pledge.status != PledgeStatus.PENDING:
+                status_val = pledge.status if pledge else 'Not Found'
+                logger.warning(f"Webhook for non-pending or non-existent pledge ID: {pledge_id}. Status: {status_val}")
+                return
 
-            if project.current_funding >= project.funding_goal and project.status == ProjectStatus.FUNDING:
-                project.status = ProjectStatus.SUCCESSFUL
-                goal_notification = Notification(
+            pledge.status = PledgeStatus.CAPTURED
+            pledge.payment_intent_id = data_object.get('payment_intent')
+            
+            project = session.get(Project, pledge.project_id)
+            if project:
+                project.current_funding += pledge.amount
+                session.add(project)
+                
+                notification = Notification(
                     user_id=project.teacher_id,
-                    content=f"Congratulations! Your project '{project.title}' has been fully funded!",
+                    content=f"You received a new pledge of €{pledge.amount/100:.2f} for your project '{project.title}'!",
                     link=f"/projects/{project.id}"
                 )
-                session.add(goal_notification)
-        else:
-            logger.error(f"CRITICAL: Could not find project with ID {pledge.project_id} for pledge {pledge.id}")
-        
-        session.commit()
-    except Exception as e:
-        logger.error(f"Error processing checkout.session.completed for pledge_id {client_reference_id}: {e}\n{traceback.format_exc()}")
-        session.rollback()
+                session.add(notification)
+
+                if project.current_funding >= project.funding_goal and project.status == ProjectStatus.FUNDING:
+                    project.status = ProjectStatus.SUCCESSFUL
+                    project.funded_at = datetime.utcnow()
+                    goal_notification = Notification(
+                        user_id=project.teacher_id,
+                        content=f"Congratulations! Your project '{project.title}' has been fully funded!",
+                        link=f"/projects/{project.id}"
+                    )
+                    session.add(goal_notification)
+            else:
+                logger.error(f"CRITICAL: Could not find project with ID {pledge.project_id} for pledge {pledge.id}")
+            
+            session.commit()
+        except Exception as e:
+            logger.error(f"Error processing checkout.session.completed for pledge_id {client_reference_id}: {e}\n{traceback.format_exc()}")
+            session.rollback()
 
 def handle_account_updated(session: Session, data_object: dict):
     try:

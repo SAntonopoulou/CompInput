@@ -16,6 +16,7 @@ const EditProject = () => {
     delivery_days: 0,
     tags: '',
     project_image_url: '',
+    series_intro_video_url: '',
   });
   const [loading, setLoading] = useState(true);
 
@@ -76,6 +77,12 @@ const EditProject = () => {
           <label htmlFor="project_image_url" className="block text-sm font-medium text-gray-700">Project Image URL (Optional)</label>
           <input type="url" name="project_image_url" id="project_image_url" value={project.project_image_url || ''} onChange={handleChange} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
         </div>
+        {project.is_series && (
+          <div>
+            <label htmlFor="series_intro_video_url" className="block text-sm font-medium text-gray-700">Series Introduction Video URL (Optional)</label>
+            <input type="url" name="series_intro_video_url" id="series_intro_video_url" value={project.series_intro_video_url || ''} onChange={handleChange} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md" />
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label htmlFor="language" className="block text-sm font-medium text-gray-700">Language</label>

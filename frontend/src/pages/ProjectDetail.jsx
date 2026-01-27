@@ -12,6 +12,7 @@ import defaultProjectImage from '../assets/default_project_image.svg';
 import { getVideoThumbnail } from '../utils/video';
 import LinkVideoModal from '../components/LinkVideoModal';
 import AddResourceModal from '../components/AddResourceModal';
+import TipForm from '../components/TipForm';
 
 const StarIcon = ({ color = 'currentColor', size = 20 }) => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill={color} height={size} width={size}>
@@ -39,6 +40,8 @@ const ProjectDetail = () => {
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [showResourceModal, setShowResourceModal] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState(null);
+  const [isEditingIntroVideo, setIsEditingIntroVideo] = useState(false);
+  const [newIntroVideoUrl, setNewIntroVideoUrl] = useState('');
   
   const { addToast } = useToast();
   const token = localStorage.getItem('token');
@@ -164,6 +167,18 @@ const ProjectDetail = () => {
     fetchData();
   };
 
+  const handleSaveIntroVideo = async () => {
+    try {
+      await client.patch(`/projects/${id}`, { series_intro_video_url: newIntroVideoUrl });
+      addToast("Intro video updated successfully!", "success");
+      setIsEditingIntroVideo(false);
+      fetchData();
+    } catch (error) {
+      console.error("Failed to update intro video", error);
+      addToast(error.response?.data?.detail || "Failed to update intro video.", "error");
+    }
+  };
+
   if (loading) return <div className="text-center py-10">Loading...</div>;
   if (error) return <div className="text-center py-10 text-red-600">{error}</div>;
   if (!project) return null;
@@ -174,12 +189,17 @@ const ProjectDetail = () => {
   const tags = project.tags ? project.tags.split(',').map(t => t.trim()) : [];
   const canRate = project.is_backed_by_user && project.status === 'completed';
 
-  const videoCount = videos.length;
-  let canLinkVideo = false;
-  if (project.is_series) {
-    canLinkVideo = project.num_videos !== null && videoCount < project.num_videos;
-  } else {
-    canLinkVideo = videoCount < 1;
+  let deliveryText = null;
+  if (project.delivery_days) {
+    if (project.status === 'completed' && project.funded_at && project.completed_at) {
+      const fundedDate = new Date(project.funded_at);
+      const completedDate = new Date(project.completed_at);
+      const diffTime = Math.abs(completedDate - fundedDate);
+      const actualDeliveryDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      deliveryText = `Delivered: ${actualDeliveryDays} days after funding (Projected: ${project.delivery_days} days)`;
+    } else if (!project.deadline) {
+      deliveryText = `Delivery: ${project.delivery_days} days after funding`;
+    }
   }
 
   let headerImageUrl = defaultProjectImage;
@@ -225,10 +245,35 @@ const ProjectDetail = () => {
           </div>
           <div className="prose prose-indigo max-w-none text-gray-500 mb-8"><p className="whitespace-pre-line">{project.description}</p></div>
 
+          {project.is_series && (
+            <div className="mt-8 border-t border-gray-200 pt-8">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-2xl font-bold text-gray-900">Series Introduction</h2>
+                {isOwner && (
+                  <button onClick={() => { setIsEditingIntroVideo(!isEditingIntroVideo); setNewIntroVideoUrl(project.series_intro_video_url || ''); }} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none">
+                    {project.series_intro_video_url ? 'Edit Intro Video' : 'Add Intro Video'}
+                  </button>
+                )}
+              </div>
+              {isEditingIntroVideo ? (
+                <div className="p-4 border rounded-lg bg-gray-50 shadow-sm">
+                  <label htmlFor="series_intro_video_url" className="block text-sm font-medium text-gray-700">Intro Video URL</label>
+                  <input type="url" id="series_intro_video_url" className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" value={newIntroVideoUrl} onChange={(e) => setNewIntroVideoUrl(e.target.value)} placeholder="https://youtube.com/watch?v=..." />
+                  <div className="mt-3 flex justify-end space-x-3">
+                    <button onClick={() => setIsEditingIntroVideo(false)} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+                    <button onClick={handleSaveIntroVideo} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">Save Intro Video</button>
+                  </div>
+                </div>
+              ) : (
+                project.series_intro_video_url ? <VideoPlayer url={project.series_intro_video_url} /> : <p>No introduction video has been added for this series yet.</p>
+              )}
+            </div>
+          )}
+
           <div className="mt-8 border-t border-gray-200 pt-8">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-2xl font-bold text-gray-900">Project Videos</h2>
-              {isOwner && project.status === 'successful' && canLinkVideo && (<button onClick={() => setShowVideoModal(true)} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">Link Video</button>)}
+              {isOwner && project.status === 'successful' && (<button onClick={() => setShowVideoModal(true)} className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none">Link Video</button>)}
             </div>
             {videos.length > 0 ? (
               <div className="space-y-8">
@@ -322,10 +367,23 @@ const ProjectDetail = () => {
               <div className="w-full bg-gray-200 rounded-full h-3"><div className="bg-indigo-600 h-3 rounded-full transition-all duration-500" style={{ width: `${percentage}%` }}></div></div>
               <p className="mt-2 text-sm text-gray-500 text-right">{Math.round(percentage)}% funded</p>
             </div>
+            {project.is_series && project.num_videos && (
+              <p className="text-sm text-gray-500 mb-3">Expected videos: {project.num_videos}</p>
+            )}
             {project.status === 'funding' ? (token ? (<PledgeForm projectId={project.id} projectName={project.title} />) : (<div className="text-center"><p className="text-gray-600 mb-4">Log in to back this project.</p><Link to="/login" className="block w-full bg-indigo-600 text-white text-center py-2 px-4 rounded-md hover:bg-indigo-700">Login to Pledge</Link></div>)) : (<div className="bg-gray-100 p-4 rounded text-center text-gray-600">This project is {project.status.replace(/_/g, ' ')}.</div>)}
+            
+            {['successful', 'completed', 'pending_confirmation'].includes(project.status) && project.teacher_stripe_account_id && (
+              <div className="mt-6 pt-6 border-t border-gray-200">
+                {project.total_tipped_amount > 0 && (
+                  <p className="text-sm text-gray-500 mb-3">Total tips received: {formatCurrency(project.total_tipped_amount)}</p>
+                )}
+                {!isOwner && <TipForm projectId={project.id} />}
+              </div>
+            )}
+
             {backers.length > 0 && (<div className="mt-6 pt-6 border-t border-gray-200"><h4 className="text-sm font-medium text-gray-900 mb-3">Backers ({backers.length})</h4><div className="flex flex-wrap gap-2">{backers.map(backer => (<Link key={backer.id} to={`/profile/${backer.id}`} title={backer.full_name}><img src={backer.avatar_url || `https://ui-avatars.com/api/?name=${backer.full_name}&background=random`} alt={backer.full_name} className="w-10 h-10 rounded-full object-cover" /></Link>))}</div></div>)}
             {project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Deadline: {new Date(project.deadline).toLocaleDateString()}</p></div>)}
-            {project.delivery_days && !project.deadline && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">Delivery: {project.delivery_days} days after funding</p></div>)}
+            {deliveryText && (<div className="mt-6 pt-6 border-t border-gray-200"><p className="text-sm text-gray-500">{deliveryText}</p></div>)}
           </div>
         </div>
       </div>

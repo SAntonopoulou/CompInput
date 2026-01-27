@@ -110,6 +110,7 @@ class Project(SQLModel, table=True):
     
     funding_goal: int
     current_funding: int = Field(default=0)
+    total_tipped_amount: int = Field(default=0)
     
     deadline: Optional[datetime] = None
     delivery_days: Optional[int] = None
@@ -122,6 +123,8 @@ class Project(SQLModel, table=True):
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
+    funded_at: Optional[datetime] = Field(default=None)
+    completed_at: Optional[datetime] = Field(default=None)
     
     teacher_id: Optional[int] = Field(default=None, foreign_key="user.id")
     teacher: Optional[User] = Relationship(back_populates="taught_projects")
@@ -138,6 +141,7 @@ class Project(SQLModel, table=True):
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
     project_image_url: Optional[str] = None
+    series_intro_video_url: Optional[str] = None
 
 class ProjectUpdate(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

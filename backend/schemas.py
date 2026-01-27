@@ -52,6 +52,7 @@ class ProjectCreate(BaseModel):
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
     project_image_url: Optional[str] = None
+    series_intro_video_url: Optional[str] = None
 
 class ProjectUpdateModel(BaseModel):
     title: Optional[str] = None
@@ -64,6 +65,7 @@ class ProjectUpdateModel(BaseModel):
     status: Optional[ProjectStatus] = None
     tags: Optional[str] = None
     project_image_url: Optional[str] = None
+    series_intro_video_url: Optional[str] = None
 
 class UpdateCreate(BaseModel):
     content: str
@@ -105,15 +107,19 @@ class ProjectRead(BaseModel):
     tags: Optional[str] = None
     funding_goal: int
     current_funding: int
+    total_tipped_amount: int = 0
     deadline: Optional[datetime] = None
     delivery_days: Optional[int] = None
     status: ProjectStatus
     is_private: bool
     created_at: datetime
     updated_at: datetime
+    funded_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
     teacher_id: int
     teacher_name: str
     teacher_avatar_url: Optional[str] = None
+    teacher_stripe_account_id: Optional[str] = None
     teacher_verified_languages: List[str] = [] # New field
     origin_request_id: Optional[int] = None
     origin_request_title: Optional[str] = None
@@ -129,6 +135,7 @@ class ProjectRead(BaseModel):
     num_videos: Optional[int] = None
     price_per_video: Optional[int] = None
     project_image_url: Optional[str] = None
+    series_intro_video_url: Optional[str] = None
 
     class Config:
         from_attributes = True

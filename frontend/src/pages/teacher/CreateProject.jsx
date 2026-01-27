@@ -18,6 +18,7 @@ const CreateProject = () => {
     num_videos: 1,
     price_per_video: 0,
     project_image_url: '',
+    series_intro_video_url: '',
   });
   const [loading, setLoading] = useState(false);
 
@@ -171,6 +172,22 @@ const CreateProject = () => {
               <input type="number" name="price_per_video" id="price_per_video" value={formData.price_per_video} onChange={handleChange} min="0" step="0.01" className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" />
               <p className="text-xs text-gray-500 mt-1">Set to 0 if you want to define a total funding goal instead.</p>
             </div>
+          </div>
+        )}
+        {formData.is_series && (
+          <div className="mb-4">
+            <label className="block text-gray-700 text-sm font-bold mb-2" htmlFor="series_intro_video_url">
+              Series Introduction Video URL (Optional)
+            </label>
+            <input
+              className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+              id="series_intro_video_url"
+              type="url"
+              placeholder="https://youtube.com/watch?v=..."
+              name="series_intro_video_url"
+              value={formData.series_intro_video_url}
+              onChange={handleChange}
+            />
           </div>
         )}
         <div className="flex flex-wrap -mx-3 mb-4">
