@@ -41,7 +41,14 @@ export const InboxProvider = ({ children }) => {
       ws.current.close();
     }
 
-    const wsUrl = `ws://${window.location.host.split(':')[0]}:8000/conversations/ws?token=${token}`;
+    // --- START: Corrected WebSocket URL Logic ---
+    const isSecure = window.location.protocol === 'https:';
+    const wsProtocol = isSecure ? 'wss' : 'ws';
+    // Use VITE_API_URL's host for WebSocket connection, falling back to window.location.host
+    const wsHost = import.meta.env.VITE_API_URL ? new URL(import.meta.env.VITE_API_URL).host : window.location.host;
+    const wsUrl = `${wsProtocol}://${wsHost}/conversations/ws?token=${token}`;
+    // --- END: Corrected WebSocket URL Logic ---
+
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
@@ -83,8 +90,6 @@ export const InboxProvider = ({ children }) => {
   useEffect(() => {
     fetchUnreadCount();
   }, [fetchUnreadCount]);
-
-  // Removed setInterval polling as WebSocket will handle real-time updates
 
   const value = {
     unreadCount,

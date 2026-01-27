@@ -163,7 +163,7 @@ def handle_checkout_session_completed(session: Session, data_object: dict):
 
                 notification = Notification(
                     user_id=teacher_id,
-                    content=f"You received a tip of €{amount / 100:.2f} for your project '{project.title}'!",
+                    message=f"You received a tip of €{amount / 100:.2f} for your project '{project.title}'!",
                     link=f"/projects/{project_id}"
                 )
                 session.add(notification)
@@ -195,7 +195,7 @@ def handle_checkout_session_completed(session: Session, data_object: dict):
                 
                 notification = Notification(
                     user_id=project.teacher_id,
-                    content=f"You received a new pledge of €{pledge.amount/100:.2f} for your project '{project.title}'!",
+                    message=f"You received a new pledge of €{pledge.amount/100:.2f} for your project '{project.title}'!",
                     link=f"/projects/{project.id}"
                 )
                 session.add(notification)
@@ -205,7 +205,7 @@ def handle_checkout_session_completed(session: Session, data_object: dict):
                     project.funded_at = datetime.utcnow()
                     goal_notification = Notification(
                         user_id=project.teacher_id,
-                        content=f"Congratulations! Your project '{project.title}' has been fully funded!",
+                        message=f"Congratulations! Your project '{project.title}' has been fully funded!",
                         link=f"/projects/{project.id}"
                     )
                     session.add(goal_notification)
@@ -232,7 +232,7 @@ def handle_account_updated(session: Session, data_object: dict):
             
             notification = Notification(
                 user_id=teacher.id,
-                content="Your Stripe account status has been updated.",
+                message="Your Stripe account status has been updated.",
                 link="/teacher/dashboard"
             )
             session.add(notification)

@@ -170,7 +170,7 @@ def approve_verification(
     
     notification = Notification(
         user_id=verification.teacher_id,
-        content=f"Your verification for {verification.language} has been approved!",
+        message=f"Your verification for {verification.language} has been approved!",
         link="/settings"
     )
     session.add(notification)
@@ -197,7 +197,7 @@ def reject_verification(
     rejection_note = f"Reason: {rejection.admin_notes}" if rejection.admin_notes else "No reason provided."
     notification = Notification(
         user_id=verification.teacher_id,
-        content=f"Your verification for {verification.language} was rejected. {rejection_note}",
+        message=f"Your verification for {verification.language} was rejected. {rejection_note}",
         link="/settings"
     )
     session.add(notification)

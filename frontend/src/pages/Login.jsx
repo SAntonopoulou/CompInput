@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { login } = useAuth(); // Get the login function from AuthContext
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,9 +26,9 @@ const Login = () => {
         },
       });
 
-      localStorage.setItem('token', response.data.access_token);
+      login(response.data.access_token); // Use the login function from AuthContext
       navigate('/');
-      window.location.reload(); // Refresh to update Navbar state
+      // No reload needed; AuthContext handles state updates.
     } catch (err) {
       console.error(err);
       setError('Invalid email or password');

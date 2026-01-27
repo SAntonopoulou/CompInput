@@ -146,7 +146,7 @@ def _cancel_project_logic(project: Project, session: Session):
                 stripe.Refund.create(payment_intent=pledge.payment_intent_id)
                 pledge.status = PledgeStatus.REFUNDED
                 session.add(pledge)
-                notification = Notification(user_id=pledge.user_id, content=f"Project '{project.title}' was cancelled and you have been refunded.", link="/")
+                notification = Notification(user_id=pledge.user_id, message=f"Project '{project.title}' was cancelled and you have been refunded.", link="/")
                 session.add(notification)
             except stripe.error.StripeError as e:
                 logger.error(f"Failed to refund pledge {pledge.id}: {e}")
@@ -161,7 +161,7 @@ def _cancel_project_logic(project: Project, session: Session):
             request.target_teacher_id = None
             request.is_private = False
             session.add(request)
-            notification = Notification(user_id=request.user_id, content=f"Project '{project.title}' was cancelled. Your request has been reopened.", link="/requests")
+            notification = Notification(user_id=request.user_id, message=f"Project '{project.title}' was cancelled. Your request has been reopened.", link="/requests")
             session.add(notification)
 
             # Blacklist the teacher who cancelled the project from this request
@@ -255,24 +255,35 @@ def create_project(
     session.commit()
     session.refresh(project)
 
+    # Check if LanguageGroup exists, create if not
+    language_group = session.exec(select(LanguageGroup).where(LanguageGroup.language_name == project.language)).first()
+    if not language_group:
+        language_group = LanguageGroup(language_name=project.language)
+        session.add(language_group)
+        session.commit() # Commit to get the ID for the new group
+        session.refresh(language_group)
+        logger.info(f"Created new LanguageGroup for: {language_group.language_name}")
+
+
     # Notify followers
     teacher = session.get(User, project.teacher_id, options=[selectinload(User.followers)])
     for follower in teacher.followers:
         notification = Notification(
             user_id=follower.id,
-            content=f"Teacher {teacher.full_name} has created a new project: '{project.title}'",
+            message=f"Teacher {teacher.full_name} has created a new project: '{project.title}'",
             link=f"/projects/{project.id}"
         )
         session.add(notification)
 
     # Notify language group members
+    # Re-fetch language_group with members loaded after potential creation
     language_group = session.exec(select(LanguageGroup).where(LanguageGroup.language_name == project.language).options(selectinload(LanguageGroup.members))).first()
     if language_group:
         for member in language_group.members:
             if member.id != teacher.id: # Don't notify the teacher about their own project
                 notification = Notification(
                     user_id=member.id,
-                    content=f"A new project in {project.language} has been posted: '{project.title}'",
+                    message=f"A new project in {project.language} has been posted: '{project.title}'",
                     link=f"/projects/{project.id}"
                 )
                 session.add(notification)
@@ -520,7 +531,7 @@ def complete_project(
     for backer in backers:
         notification = Notification(
             user_id=backer.id,
-            content=f"Project '{project.title}' is ready for your review. Please confirm its completion.",
+            message=f"Project '{project.title}' is ready for your review. Please confirm its completion.",
             link=f"/projects/{project.id}"
         )
         session.add(notification)
@@ -573,7 +584,7 @@ def confirm_completion(
 
     notification = Notification(
         user_id=project.teacher_id,
-        content=f"Your funds for project '{project.title}' have been released.",
+        message=f"Your funds for project '{project.title}' have been released.",
         link=f"/teacher/dashboard"
     )
     session.add(notification)

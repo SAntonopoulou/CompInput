@@ -136,7 +136,7 @@ def create_video(
         if pledge.user_id not in notified_users:
             notification = Notification(
                 user_id=pledge.user_id,
-                content=f"New video posted in '{project.title}': {video.title}",
+                message=f"New video posted in '{project.title}': {video.title}",
                 link=f"/projects/{project.id}"
             )
             session.add(notification)

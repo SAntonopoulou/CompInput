@@ -1,6 +1,7 @@
 from typing import List, Optional
 from datetime import datetime, date
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session, select
@@ -11,9 +12,11 @@ from pydantic import BaseModel
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import Request, Project, ProjectStatus, User, UserRole, RequestStatus, Notification, RequestBlacklist, Conversation, ConversationStatus, Message, MessageType
-from ..schemas import RequestCreate, RequestRead, ProjectResponse, CounterOffer, MessageRead
+from ..models import PriorityCredit, PriorityCreditStatus, SubscriptionTier # Import new models
+from ..schemas import RequestCreate, RequestRead, ProjectResponse, CounterOffer, MessageRead # Keep existing imports
 from .conversations import manager
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/requests", tags=["requests"])
 
 def json_serial(obj):
@@ -21,6 +24,10 @@ def json_serial(obj):
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     raise TypeError ("Type %s not serializable" % type(obj))
+
+# Update RequestCreate schema to include use_priority_credit
+class RequestCreate(RequestCreate):
+    use_priority_credit: Optional[bool] = False
 
 @router.post("/", response_model=Request)
 def create_request(
@@ -31,11 +38,32 @@ def create_request(
     """
     Create a new content request.
     """
+    request_data = request_in.model_dump(exclude_unset=True)
+    use_priority_credit = request_data.pop("use_priority_credit", False)
+
     request = Request(
-        **request_in.dict(),
+        **request_data,
         user_id=current_user.id,
         status=RequestStatus.OPEN
     )
+
+    # Handle priority credit usage
+    if use_priority_credit and current_user.subscription_tier == SubscriptionTier.PREMIUM:
+        # Find an available priority credit for the user
+        priority_credit = session.exec(
+            select(PriorityCredit)
+            .where(PriorityCredit.user_id == current_user.id)
+            .where(PriorityCredit.status == PriorityCreditStatus.AVAILABLE)
+        ).first()
+
+        if priority_credit:
+            request.priority_credit_id = priority_credit.id
+            # Note: The status of the PriorityCredit is updated in the accept_offer endpoint
+            # to ensure it's only marked as USED when the request is actually accepted.
+        else:
+            # Silently ignore if no credit is found, as per the prompt's suggestion for UX
+            print(f"User {current_user.id} tried to use priority credit but none was available.")
+
     session.add(request)
     session.commit()
     session.refresh(request)
@@ -44,10 +72,11 @@ def create_request(
     if request.target_teacher_id:
         notification = Notification(
             user_id=request.target_teacher_id,
-            content=f"Student {current_user.full_name} requested a video from you: {request.title}",
+            message=f"Student {current_user.full_name} requested a video from you: {request.title}",
             is_read=False,
             link="/requests"
         )
+        logger.debug(f"Creating notification for new request: {notification.message}, link: {notification.link}")
         session.add(notification)
         session.commit()
 
@@ -239,10 +268,11 @@ async def cancel_request(
             # Create a standard notification
             notification = Notification(
                 user_id=conv.teacher_id,
-                content=cancellation_message_content, # Use the same content as the message
+                message=cancellation_message_content, # Use the same content as the message
                 is_read=False,
                 link=f"/messages/{conv.id}" # Link to the archived conversation
             )
+            logger.debug(f"Creating notification for request cancellation: {notification.message}, link: {notification.link}")
             notifications_to_add.append(notification)
         
         # 3. Close the conversation in the database
@@ -294,10 +324,11 @@ async def cancel_request(
 #     # Notify Student
 #     notification = Notification(
 #         user_id=request.user_id,
-#         content=f"Teacher {current_user.full_name} accepted your request '{request.title}'!",
+#         message=f"Teacher {current_user.full_name} accepted your request '{request.title}'!",
 #         is_read=False,
 #         link=f"/projects/{project.id}"
 #     )
+#     logger.debug(f"Creating notification for request conversion: {notification.message}, link: {notification.link}")
 #     session.add(notification)
 #     session.commit()
     
@@ -334,10 +365,11 @@ async def cancel_request(
 #     # Notify Student
 #     notification = Notification(
 #         user_id=request.user_id,
-#         content=f"Teacher {current_user.full_name} proposed a new price for your request: {request.title}",
+#         message=f"Teacher {current_user.full_name} proposed a new price for your request: {request.title}",
 #         is_read=False,
 #         link="/requests"
 #     )
+#     logger.debug(f"Creating notification for counter offer: {notification.message}, link: {notification.link}")
 #     session.add(notification)
 #     session.commit()
     
@@ -386,10 +418,11 @@ async def cancel_request(
 #     # Notify Teacher
 #     notification = Notification(
 #         user_id=request.target_teacher_id,
-#         content=f"Offer accepted! Project '{project.title}' is now created.",
+#         message=f"Offer accepted! Project '{project.title}' is now created.",
 #         is_read=False,
 #         link=f"/projects/{project.id}"
 #     )
+#     logger.debug(f"Creating notification for offer acceptance: {notification.message}, link: {notification.link}")
 #     session.add(notification)
 #     session.commit()
     
@@ -431,10 +464,11 @@ async def cancel_request(
 
 #         notification = Notification(
 #             user_id=previous_teacher_id,
-#             content=f"Offer rejected for '{request.title}'. The request has been re-opened.",
+#             message=f"Offer rejected for '{request.title}'. The request has been re-opened.",
 #             is_read=False,
 #             link="/requests"
 #         )
+#         logger.debug(f"Creating notification for offer rejection: {notification.message}, link: {notification.link}")
 #         session.add(notification)
 #         session.commit()
         

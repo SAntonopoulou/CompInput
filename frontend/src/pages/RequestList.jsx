@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import client from '../api/client';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
 const RequestList = () => {
   const [requests, setRequests] = useState([]);
@@ -10,7 +11,6 @@ const RequestList = () => {
   const [myAcceptedRequests, setMyAcceptedRequests] = useState([]);
   const [communityRequests, setCommunityRequests] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [newRequest, setNewRequest] = useState({
     title: '',
@@ -23,6 +23,7 @@ const RequestList = () => {
     is_series: false,
     num_videos: null
   });
+  const [usePriorityCredit, setUsePriorityCredit] = useState(false); // New state for priority credit
   const [teacherSearch, setTeacherSearch] = useState('');
   const [teacherResults, setTeacherResults] = useState([]);
   const [selectedTeacherName, setSelectedTeacherName] = useState('');
@@ -33,52 +34,51 @@ const RequestList = () => {
 
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const token = localStorage.getItem('token');
+  const { currentUser } = useAuth(); // Get currentUser from AuthContext
+
+  const fetchInitialData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [requestsRes, filtersRes] = await Promise.all([
+        client.get('/requests/'),
+        client.get('/projects/filter-options')
+      ]);
+      
+      setRequests(requestsRes.data);
+      setAvailableFilters(filtersRes.data);
+
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      addToast('Error fetching data', 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [addToast]);
 
   useEffect(() => {
-    const fetchInitialData = async () => {
-      setLoading(true);
-      try {
-        const [userRes, requestsRes, filtersRes] = await Promise.all([
-          token ? client.get('/users/me') : Promise.resolve(null),
-          client.get('/requests/'),
-          client.get('/projects/filter-options')
-        ]);
-        
-        if (userRes) setUser(userRes.data);
-        setRequests(requestsRes.data);
-        setAvailableFilters(filtersRes.data);
-
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        addToast('Error fetching data', 'error');
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchInitialData();
-  }, [token, addToast]);
+  }, [fetchInitialData]);
 
   useEffect(() => {
-    if (!user || !requests) return;
+    if (!currentUser || !requests) return;
 
     const myOpen = requests.filter(req => 
-      req.user_id === user.id && (req.status === 'open' || req.status === 'negotiating')
+      req.user_id === currentUser.id && (req.status === 'open' || req.status === 'negotiating')
     );
     const myAccepted = requests.filter(req => 
-      req.user_id === user.id && req.status === 'accepted'
+      req.user_id === currentUser.id && req.status === 'accepted'
     );
     const community = requests.filter(req => 
-      req.user_id !== user.id && 
+      req.user_id !== currentUser.id && 
       (req.status === 'open' || req.status === 'negotiating') &&
-      (req.is_private === false || (user.role === 'teacher' && req.target_teacher_id === user.id))
+      (req.is_private === false || (currentUser.role === 'teacher' && req.target_teacher_id === currentUser.id))
     );
 
     setMyOpenRequests(myOpen);
     setMyAcceptedRequests(myAccepted);
     setCommunityRequests(community);
 
-  }, [requests, user]);
+  }, [requests, currentUser]);
 
   useEffect(() => {
     const searchTeachers = async () => {
@@ -102,10 +102,12 @@ const RequestList = () => {
         ...newRequest, 
         budget: Math.round(newRequest.budget * 100),
         num_videos: newRequest.is_series ? newRequest.num_videos : null,
+        use_priority_credit: usePriorityCredit, // Include priority credit flag
       };
       await client.post('/requests/', payload);
       setShowModal(false);
       setNewRequest({ title: '', description: '', language: '', level: '', budget: 0, target_teacher_id: null, is_private: false, is_series: false, num_videos: null });
+      setUsePriorityCredit(false); // Reset priority credit checkbox
       setSelectedTeacherName('');
       setTeacherSearch('');
       addToast('Request created successfully!', 'success');
@@ -113,7 +115,7 @@ const RequestList = () => {
       setRequests(response.data);
     } catch (error) {
       console.error("Failed to create request", error);
-      addToast('Failed to create request', 'error');
+      addToast(error.response?.data?.detail || 'Failed to create request', 'error');
     }
   };
 
@@ -152,6 +154,7 @@ const RequestList = () => {
   const allLanguages = availableFilters.languages.map(l => l.language);
   const allLevels = [...new Set(availableFilters.languages.flatMap(l => l.levels))];
   const userHasRequests = myOpenRequests.length > 0 || myAcceptedRequests.length > 0;
+  const isPremiumStudent = currentUser && currentUser.subscription_tier === 'premium';
 
   const renderEmptyState = () => (
     <div className="text-center py-16 bg-white rounded-lg shadow-md">
@@ -210,13 +213,13 @@ const RequestList = () => {
           </div>
           <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
             <span className="text-xs text-gray-400">Requested by {req.user_name}</span>
-            {user && user.role === 'teacher' && req.user_id !== user.id && (req.status === 'open' || req.status === 'negotiating') && (
+            {currentUser && currentUser.role === 'teacher' && req.user_id !== currentUser.id && (req.status === 'open' || req.status === 'negotiating') && (
               <button onClick={() => handleDiscussWithStudent(req.id)} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-indigo-600 hover:bg-indigo-700">Discuss with Student</button>
             )}
-            {user && user.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && (
+            {currentUser && currentUser.id === req.user_id && (req.status === 'open' || req.status === 'negotiating') && (
               <button onClick={() => confirmCancelRequest(req.id)} className="inline-flex items-center px-2 py-1 border border-gray-300 text-xs font-medium rounded text-gray-500 bg-white hover:bg-gray-50">Cancel Request</button>
             )}
-            {user && user.id === req.user_id && req.status === 'accepted' && req.associated_project_id && (
+            {currentUser && currentUser.id === req.user_id && req.status === 'accepted' && req.associated_project_id && (
               <Link to={`/projects/${req.associated_project_id}`} className="inline-flex items-center px-2 py-1 border border-transparent text-xs font-medium rounded text-white bg-green-600 hover:bg-green-700">View Project</Link>
             )}
           </div>
@@ -227,7 +230,7 @@ const RequestList = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {loading || !user ? <div className="text-center py-10">Loading...</div> : (
+      {loading || !currentUser ? <div className="text-center py-10">Loading...</div> : (
         <>
           {!userHasRequests && renderEmptyState()}
           {userHasRequests && renderRequestHeader()}
@@ -306,6 +309,22 @@ const RequestList = () => {
                         )}
                     </div>
                     {newRequest.target_teacher_id && <div className="flex items-center"><input id="is_private" name="is_private" type="checkbox" className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded" checked={newRequest.is_private} onChange={(e) => setNewRequest({...newRequest, is_private: e.target.checked})} /><label htmlFor="is_private" className="ml-2 block text-sm text-gray-900">Private Request (Only visible to target teacher)</label></div>}
+                    
+                    {isPremiumStudent && (
+                      <div className="flex items-center mt-4">
+                        <input
+                          id="use_priority_credit"
+                          name="use_priority_credit"
+                          type="checkbox"
+                          className="h-4 w-4 text-indigo-600 border-gray-300 rounded"
+                          checked={usePriorityCredit}
+                          onChange={(e) => setUsePriorityCredit(e.target.checked)}
+                        />
+                        <label htmlFor="use_priority_credit" className="ml-2 block text-sm text-gray-900">
+                          Use my monthly Priority Credit (€5 instant funding)
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">

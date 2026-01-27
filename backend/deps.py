@@ -1,4 +1,4 @@
-from typing import Generator, Optional
+from typing import Generator, Optional, Callable
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -73,3 +73,16 @@ def get_current_admin(
             detail="The user doesn't have enough privileges",
         )
     return current_user
+
+def require_role(role: UserRole) -> Callable[[User], User]:
+    """
+    Returns a dependency that requires the current user to have a specific role.
+    """
+    def role_checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role != role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"The user must have the '{role.value}' role",
+            )
+        return current_user
+    return role_checker

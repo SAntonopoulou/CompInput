@@ -63,7 +63,7 @@ def rate_project(
     # Notify the teacher
     notification = Notification(
         user_id=project.teacher_id,
-        content=f"You received a new {rating.rating}-star review for your project '{project.title}'.",
+        message=f"You received a new {rating.rating}-star review for your project '{project.title}'.",
         link=f"/projects/{project.id}"
     )
     session.add(notification)

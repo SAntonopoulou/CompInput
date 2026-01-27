@@ -128,8 +128,14 @@ const Inbox = () => {
 
   useEffect(() => {
     if (!conversationId || !user || !token) return;
-    const wsUrl = `ws://${window.location.host.split(':')[0]}:8000/conversations/${conversationId}/ws?token=${token}`;
+  
+    const isSecure = window.location.protocol === 'https:';
+    const wsProtocol = isSecure ? 'wss' : 'ws';
+    const wsHost = import.meta.env.VITE_API_URL ? new URL(import.meta.env.VITE_API_URL).host : window.location.host;
+    const wsUrl = `${wsProtocol}://${wsHost}/conversations/${conversationId}/ws?token=${token}`;
+  
     ws.current = new WebSocket(wsUrl);
+  
     ws.current.onopen = () => console.log("WebSocket connected");
     ws.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
@@ -322,7 +328,7 @@ const Inbox = () => {
       const response = await client.post(`/conversations/messages/${messageId}/accept-offer`);
       addToast('Offer accepted! Project created.', 'success');
       navigate(`/projects/${response.data.id}`);
-    } catch (error) {
+    } catch (error) { // Added opening curly brace here
       addToast(error.response?.data?.detail || 'Failed to accept offer', 'error');
     } finally {
       setConfirmModalOpen(false);

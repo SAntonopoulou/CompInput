@@ -79,7 +79,7 @@ const Notifications = () => {
                 <div key={notif.id} className="group px-4 py-3 border-b hover:bg-gray-50 bg-blue-50">
                   <div className="flex justify-between items-start">
                     <Link to={notif.link || '#'} onClick={() => { setIsOpen(false); handleMarkAsRead(notif.id); }} className="text-sm text-gray-800 pr-2">
-                      {notif.content}
+                      {notif.message}
                     </Link>
                     <button onClick={() => handleMarkAsRead(notif.id)} className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-600">
                       <FaTimes size={12} />

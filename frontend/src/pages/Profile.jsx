@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import client from '../api/client';
 import { FaShieldAlt } from 'react-icons/fa';
 import ProjectCard from '../components/ProjectCard';
 import VideoPlayer from '../components/VideoPlayer';
+import { useAuth } from '../context/AuthContext'; // Import useAuth
 
 const VerifiedLanguageBadge = ({ language }) => (
   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -12,10 +13,35 @@ const VerifiedLanguageBadge = ({ language }) => (
   </span>
 );
 
+const SubscriptionBadge = ({ tier }) => {
+  if (tier === 'none') return null;
+
+  const getBadgeClasses = (subscriptionTier) => {
+    switch (subscriptionTier) {
+      case 'plus':
+        return 'bg-green-100 text-green-800';
+      case 'premium':
+        return 'bg-purple-100 text-purple-800';
+      case 'pro':
+        return 'bg-yellow-100 text-yellow-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  return (
+    <span
+      className={`ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium uppercase ${getBadgeClasses(tier)}`}
+    >
+      {tier}
+    </span>
+  );
+};
+
 const Profile = () => {
   const { id } = useParams();
+  const { currentUser } = useAuth(); // Use the auth context
   const [profile, setProfile] = useState(null);
-  const [currentUser, setCurrentUser] = useState(null);
   const [projectData, setProjectData] = useState({ projects: [], total_count: 0 });
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
@@ -51,14 +77,6 @@ const Profile = () => {
             sample_video_url: profileRes.data.sample_video_url || '',
             avatar_url: profileRes.data.avatar_url || ''
         });
-
-        const token = localStorage.getItem('token');
-        if (token) {
-            try {
-                const userRes = await client.get('/users/me');
-                setCurrentUser(userRes.data);
-            } catch (e) { console.error("Failed to fetch current user"); }
-        }
 
         if (profileRes.data.role === 'teacher') {
             const projectsRes = await client.get(`/users/${id}/completed-projects`, { params: { limit: 2 } });
@@ -150,6 +168,7 @@ const Profile = () => {
             <div>
                 <div className="flex items-center gap-x-2">
                     <h3 className="text-lg leading-6 font-medium text-gray-900">{profile.full_name}</h3>
+                    {profile.subscription_tier && <SubscriptionBadge tier={profile.subscription_tier} />} {/* Subscription Badge */}
                     {hasVerifiedLanguages && <FaShieldAlt className="text-blue-500" title="This teacher has verified languages" />}
                 </div>
                 <p className="mt-1 max-w-2xl text-sm text-gray-500">

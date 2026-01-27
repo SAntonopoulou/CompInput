@@ -3,38 +3,38 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client';
 import ConfirmationModal from '../components/ConfirmationModal';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext'; // useAuth is already imported
 
 const Settings = () => {
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { currentUser, token } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [verifications, setVerifications] = useState([]);
   const [newVerification, setNewVerification] = useState({ language: '', document_url: '' });
   const [myGroups, setMyGroups] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const fetchUserData = useCallback(async () => {
+  const fetchPageData = useCallback(async () => {
+    if (!currentUser) return;
     try {
-      const userRes = await client.get('/users/me');
-      setUser(userRes.data);
-      if (userRes.data.role === 'teacher') {
+      if (currentUser.role === 'teacher') {
         const verificationsRes = await client.get('/verifications/');
         setVerifications(verificationsRes.data);
       }
       const myGroupsRes = await client.get('/language-groups/me');
       setMyGroups(myGroupsRes.data);
     } catch (error) {
-      console.error("Failed to fetch user data", error);
-      addToast("Could not load user data.", "error");
+      console.error("Failed to fetch page data", error);
+      addToast("Could not load page data.", "error");
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }, [addToast, currentUser]);
 
   useEffect(() => {
-    fetchUserData();
-  }, [fetchUserData]);
+    fetchPageData();
+  }, [fetchPageData]);
 
   const handleDeleteAccount = async () => {
     setModalOpen(false);
@@ -59,6 +59,18 @@ const Settings = () => {
     }
   };
 
+  const handleManageSubscription = async () => {
+    try {
+      const response = await client.get('/subscriptions/customer-portal'); // Use client.get and correct path
+      if (response.data.url) {
+        window.location.href = response.data.url;
+      }
+    } catch (error) {
+      console.error('Error fetching customer portal:', error);
+      addToast('Could not open subscription management.', 'error');
+    }
+  };
+
   const handleVerificationSubmit = async (e) => {
     e.preventDefault();
     if (!newVerification.language.trim() || !newVerification.document_url.trim()) {
@@ -69,7 +81,7 @@ const Settings = () => {
       await client.post('/verifications/', newVerification);
       addToast("Verification request submitted!", "success");
       setNewVerification({ language: '', document_url: '' });
-      fetchUserData(); // Refresh verifications list
+      fetchPageData(); // Refresh verifications list
     } catch (error) {
       addToast(error.response?.data?.detail || "Failed to submit request.", "error");
     }
@@ -79,7 +91,7 @@ const Settings = () => {
     try {
       await client.delete(`/language-groups/${groupId}/join`);
       addToast("Successfully left group.", "success");
-      fetchUserData();
+      fetchPageData();
     } catch (error) {
       addToast("Failed to leave group.", "error");
     }
@@ -95,10 +107,37 @@ const Settings = () => {
   };
 
   if (loading) return <div>Loading...</div>;
+  if (!currentUser) return <div>Please log in to view your settings.</div>;
+
+  const isProTeacher = currentUser.role === 'teacher' && currentUser.subscription_tier === 'pro';
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Settings</h1>
+
+      <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
+        <div className="px-4 py-5 sm:p-6">
+          <h3 className="text-lg leading-6 font-medium text-gray-900">Subscription</h3>
+          <div className="mt-2 max-w-xl text-sm text-gray-500">
+            <p>
+              You are on the{' '}
+              <span className="font-semibold capitalize">
+                {currentUser.subscription_tier === 'none' ? 'Free' : currentUser.subscription_tier}
+              </span>{' '}
+              plan.
+            </p>
+          </div>
+          <div className="mt-5">
+            <button
+              type="button"
+              onClick={handleManageSubscription}
+              className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm"
+            >
+              Manage Subscription
+            </button>
+          </div>
+        </div>
+      </div>
 
       <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
         <div className="px-4 py-5 sm:p-6">
@@ -118,24 +157,31 @@ const Settings = () => {
         </div>
       </div>
 
-      {user && user.role === 'teacher' && (
+      {currentUser.role === 'teacher' && (
         <>
           <div className="bg-white shadow overflow-hidden sm:rounded-lg mb-8">
             <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900">Language Verifications</h3>
-              <p className="mt-2 max-w-xl text-sm text-gray-500">Submit documents to get a "Verified" badge for languages you're certified in.</p>
-              
-              <form onSubmit={handleVerificationSubmit} className="mt-5 space-y-4">
-                <div>
-                  <label htmlFor="language" className="block text-sm font-medium text-gray-700">Language</label>
-                  <input type="text" id="language" value={newVerification.language} onChange={(e) => setNewVerification({...newVerification, language: e.target.value})} placeholder="e.g., Japanese" className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
-                </div>
-                <div>
-                  <label htmlFor="document_url" className="block text-sm font-medium text-gray-700">Link to Certificate</label>
-                  <input type="url" id="document_url" value={newVerification.document_url} onChange={(e) => setNewVerification({...newVerification, document_url: e.target.value})} placeholder="e.g., https://drive.google.com/..." className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
-                </div>
-                <button type="submit" className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">Submit Verification</button>
-              </form>
+              {isProTeacher ? (
+                <>
+                  <p className="mt-2 max-w-xl text-sm text-gray-500">As a Pro member, you can submit documents to get a "Verified" badge.</p>
+                  <form onSubmit={handleVerificationSubmit} className="mt-5 space-y-4">
+                    <div>
+                      <label htmlFor="language" className="block text-sm font-medium text-gray-700">Language</label>
+                      <input type="text" id="language" value={newVerification.language} onChange={(e) => setNewVerification({...newVerification, language: e.target.value})} placeholder="e.g., Japanese" className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                    <div>
+                      <label htmlFor="document_url" className="block text-sm font-medium text-gray-700">Link to Certificate</label>
+                      <input type="url" id="document_url" value={newVerification.document_url} onChange={(e) => setNewVerification({...newVerification, document_url: e.target.value})} placeholder="e.g., https://drive.google.com/..." className="mt-1 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                    <button type="submit" className="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">Submit Verification</button>
+                  </form>
+                </>
+              ) : (
+                <p className="mt-2 text-sm text-gray-500">
+                  You must be a <span className="font-semibold">Pro</span> subscriber to submit verification requests.
+                </p>
+              )}
 
               <div className="mt-8">
                 <h4 className="text-md font-medium text-gray-800">Your Submissions</h4>
@@ -164,11 +210,11 @@ const Settings = () => {
             <div className="px-4 py-5 sm:p-6">
               <h3 className="text-lg leading-6 font-medium text-gray-900">Payouts</h3>
               <div className="mt-2 max-w-xl text-sm text-gray-500">
-                {user.charges_enabled ? <p>Your payout account is active. You can manage your account details on Stripe.</p> : <p>Connect with Stripe to receive payments for your funded projects.</p>}
+                {currentUser.charges_enabled ? <p>Your payout account is active. You can manage your account details on Stripe.</p> : <p>Connect with Stripe to receive payments for your funded projects.</p>}
               </div>
               <div className="mt-5">
                 <button type="button" onClick={handleStripeOnboarding} className="inline-flex items-center justify-center px-4 py-2 border border-transparent font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:text-sm">
-                  {user.charges_enabled ? 'Edit Your Payouts' : 'Set up Payouts'}
+                  {currentUser.charges_enabled ? 'Edit Your Payouts' : 'Set up Payouts'}
                 </button>
               </div>
             </div>

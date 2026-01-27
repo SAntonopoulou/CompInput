@@ -275,7 +275,7 @@ def follow_teacher(
     # Notify the teacher
     notification = Notification(
         user_id=teacher_id,
-        content=f"{current_user.full_name} is now following you.",
+        message=f"{current_user.full_name} is now following you.",
         link=f"/profile/{current_user.id}"
     )
     session.add(notification)

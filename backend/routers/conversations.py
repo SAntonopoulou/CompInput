@@ -7,12 +7,17 @@ import json
 
 from ..database import get_session
 from ..deps import get_current_user
-from ..models import User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType, OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist, Notification
+from ..models import (
+    User, UserRole, Request, Conversation, ConversationStatus, Message, MessageType,
+    OfferStatus, Project, ProjectStatus, RequestStatus, RequestBlacklist, Notification,
+    Pledge, PledgeStatus, PriorityCredit, PriorityCreditStatus
+)
 from ..security import decode_access_token
 from ..schemas import (
     ConversationCreate, MessageCreate, OfferCreate, DemoVideoUpdate,
     UserPublicRead, MessageRead, ConversationRead, ConversationSummaryRead, InboxSummary, RequestRead as FullRequestRead
 )
+from ..services.gamification import award_achievement
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -545,6 +550,40 @@ async def accept_offer(
     session.add(new_project)
     session.flush() # To get the new_project.id
 
+    # Handle Priority Credit usage
+    if request.priority_credit_id:
+        credit = session.get(PriorityCredit, request.priority_credit_id)
+        if not credit:
+            raise HTTPException(status_code=404, detail="Priority credit not found.")
+        if credit.user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Priority credit does not belong to you.")
+        if credit.status != PriorityCreditStatus.AVAILABLE:
+            raise HTTPException(status_code=400, detail="Priority credit is not available.")
+
+        # Create a pledge representing the credit usage
+        credit_pledge = Pledge(
+            amount=500,  # 500 cents = $5.00
+            status=PledgeStatus.PAID_BY_CREDIT,
+            user_id=current_user.id,
+            project_id=new_project.id
+        )
+        session.add(credit_pledge)
+
+        # Update the credit status
+        credit.status = PriorityCreditStatus.USED
+        credit.used_on_request_id = request.id
+        session.add(credit)
+
+    # Award "First Steps" achievement
+    accepted_requests_count = session.exec(
+        select(func.count(Request.id))
+        .where(Request.user_id == current_user.id)
+        .where(Request.status == RequestStatus.ACCEPTED)
+    ).one()
+
+    if accepted_requests_count == 1:
+        award_achievement(user=current_user, achievement_key="first_steps", session=session)
+
     # Broadcast acceptance before closing to allow for redirect
     await manager.broadcast_to_conversation(json.dumps({"type": "OFFER_ACCEPTED", "project_id": new_project.id}), conversation.id)
 
@@ -679,7 +718,7 @@ async def leave_conversation(
         # Create a standard notification
         notification = Notification(
             user_id=conversation.teacher_id,
-            content=leave_message_content,
+            message=leave_message_content,
             is_read=False,
             link=f"/messages/{conversation.id}" # Link to the archived conversation
         )
@@ -777,7 +816,7 @@ async def teacher_leave_conversation(
         # Create a standard notification
         notification = Notification(
             user_id=conversation.student_id,
-            content=leave_message_content,
+            message=leave_message_content,
             is_read=False,
             link=f"/messages/{conversation.id}" # Link to the archived conversation
         )

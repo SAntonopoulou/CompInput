@@ -27,7 +27,12 @@ const Navbar = () => {
         } catch (error) {
           console.error("Failed to fetch user for navbar", error);
           if (error.response && error.response.status === 403) {
-            handleLogout();
+            // This case should now be handled by the axios interceptor in client.js
+            // If it still happens, it means the token is truly invalid or expired.
+            localStorage.removeItem('token');
+            setUser(null);
+            navigate('/login');
+            // No window.location.reload() here, AuthContext should handle state
           }
         }
       }
@@ -52,7 +57,7 @@ const Navbar = () => {
     localStorage.removeItem('token');
     setUser(null);
     navigate('/login');
-    window.location.reload();
+    window.location.reload(); // This reload is still necessary to clear all component states
   };
 
   const handleSearch = (e) => {
@@ -79,13 +84,17 @@ const Navbar = () => {
                   <Link to="/requests" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Requests</Link>
                   <Link to="/groups" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Groups</Link>
                   <Link to="/archive" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Archive</Link>
+                  <Link to="/pricing" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Pricing</Link>
                   
                   {user.role === 'teacher' && <Link to="/teacher/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Dashboard</Link>}
                   {user.role === 'student' && <Link to="/student/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">My Pledges</Link>}
                   {user.role === 'admin' && <Link to="/admin/dashboard" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Admin</Link>}
                 </>
               ) : (
-                <Link to="/archive" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Archive</Link>
+                <>
+                  <Link to="/archive" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Archive</Link>
+                  <Link to="/pricing" className="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 inline-flex items-center px-1 pt-1 border-b-2 text-sm font-medium">Pricing</Link>
+                </>
               )}
             </div>
           </div>

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import List, Optional
 from sqlmodel import Field, Relationship, SQLModel
@@ -9,6 +9,12 @@ class UserRole(str, Enum):
     TEACHER = "teacher"
     MODERATOR = "moderator"
     ADMIN = "admin"
+
+class SubscriptionTier(str, Enum):
+    NONE = "none"
+    PLUS = "plus"
+    PREMIUM = "premium"
+    PRO = "pro"
 
 class ProjectStatus(str, Enum):
     DRAFT = "draft"
@@ -23,6 +29,7 @@ class PledgeStatus(str, Enum):
     PENDING = "pending"
     CAPTURED = "captured"
     REFUNDED = "refunded"
+    PAID_BY_CREDIT = "paid_by_credit"
 
 class RequestStatus(str, Enum):
     OPEN = "open"
@@ -51,10 +58,20 @@ class OfferStatus(str, Enum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
 
+class PriorityCreditStatus(str, Enum):
+    AVAILABLE = "available"
+    USED = "used"
+
 # Association table for User and LanguageGroup
 class UserLanguageGroup(SQLModel, table=True):
     user_id: Optional[int] = Field(default=None, foreign_key="user.id", primary_key=True)
     group_id: Optional[int] = Field(default=None, foreign_key="languagegroup.id", primary_key=True)
+
+# New Association table for User and Achievement
+class UserAchievement(SQLModel, table=True):
+    user_id: int = Field(foreign_key="user.id", primary_key=True)
+    achievement_id: int = Field(foreign_key="achievement.id", primary_key=True)
+    unlocked_at: datetime = Field(default_factory=datetime.utcnow)
 
 # Database Models
 class LanguageGroup(SQLModel, table=True):
@@ -85,6 +102,9 @@ class User(SQLModel, table=True):
     charges_enabled: bool = Field(default=False)
     payouts_enabled: bool = Field(default=False)
     
+    subscription_tier: SubscriptionTier = Field(default=SubscriptionTier.NONE)
+    subscription_expires_at: Optional[datetime] = None
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
     deleted_at: Optional[datetime] = Field(default=None)
@@ -96,6 +116,8 @@ class User(SQLModel, table=True):
     project_ratings: List["ProjectRating"] = Relationship(back_populates="user")
     video_comments: List["VideoComment"] = Relationship(back_populates="user")
     verifications: List["TeacherVerification"] = Relationship(back_populates="teacher")
+    priority_credits: List["PriorityCredit"] = Relationship(back_populates="user")
+    achievements: List["Achievement"] = Relationship(back_populates="users", link_model=UserAchievement)
 
     # Follower relationships
     followers: List["User"] = Relationship(
@@ -123,6 +145,9 @@ class User(SQLModel, table=True):
     conversations_as_teacher: List["Conversation"] = Relationship(back_populates="teacher", sa_relationship_kwargs={"foreign_keys": "Conversation.teacher_id"})
     conversations_as_student: List["Conversation"] = Relationship(back_populates="student", sa_relationship_kwargs={"foreign_keys": "Conversation.student_id"})
 
+    @property
+    def is_pro_subscriber(self) -> bool:
+        return self.role == UserRole.TEACHER and self.subscription_tier == SubscriptionTier.PRO
 
 class TeacherVerification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -264,6 +289,8 @@ class Request(SQLModel, table=True):
     status: RequestStatus = Field(default=RequestStatus.OPEN)
     is_private: bool = Field(default=False)
     
+    priority_credit_id: Optional[int] = Field(default=None, foreign_key="prioritycredit.id")
+
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     user_id: Optional[int] = Field(default=None, foreign_key="user.id")
@@ -278,7 +305,7 @@ class Request(SQLModel, table=True):
 
 class Notification(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    content: str
+    message: str
     is_read: bool = Field(default=False)
     link: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -333,3 +360,23 @@ class Message(SQLModel, table=True):
     conversation: Optional["Conversation"] = Relationship(back_populates="messages")
     sender: Optional["User"] = Relationship(back_populates="sent_messages")
     replied_to_message: Optional["Message"] = Relationship(sa_relationship_kwargs={"remote_side": "Message.id"})
+
+# New Models
+class PriorityCredit(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    expires_at: datetime = Field(default_factory=lambda: datetime.utcnow() + timedelta(days=30))
+    status: PriorityCreditStatus = Field(default=PriorityCreditStatus.AVAILABLE)
+    used_on_request_id: Optional[int] = Field(default=None, foreign_key="request.id")
+
+    user: "User" = Relationship(back_populates="priority_credits")
+
+class Achievement(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    key: str = Field(unique=True, index=True)
+    name: str
+    description: str
+    icon_url: Optional[str] = None
+
+    users: List["User"] = Relationship(back_populates="achievements", link_model=UserAchievement)

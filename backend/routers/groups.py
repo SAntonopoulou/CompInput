@@ -1,14 +1,16 @@
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session, select, func
+from sqlmodel import Session, select
 from pydantic import BaseModel
 from sqlalchemy.orm import selectinload
+import logging
 
 from ..database import get_session
 from ..deps import get_current_user
 from ..models import LanguageGroup, User, Project, ProjectStatus, UserLanguageGroup
 
 router = APIRouter(prefix="/language-groups", tags=["language-groups"])
+logger = logging.getLogger(__name__)
 
 class LanguageGroupRead(BaseModel):
     id: int
@@ -16,6 +18,12 @@ class LanguageGroupRead(BaseModel):
 
 @router.get("/", response_model=List[LanguageGroupRead])
 def list_language_groups(session: Session = Depends(get_session)):
+    # First, let's check if any LanguageGroups exist at all
+    all_groups_statement = select(LanguageGroup.id, LanguageGroup.language_name)
+    all_groups_results = session.exec(all_groups_statement).all()
+    logger.info(f"All LanguageGroups found: {all_groups_results}")
+
+    # Now, the original query to find groups with active projects
     statement = (
         select(LanguageGroup.id, LanguageGroup.language_name)
         .join(Project, LanguageGroup.language_name == Project.language)
@@ -24,6 +32,7 @@ def list_language_groups(session: Session = Depends(get_session)):
         .order_by(LanguageGroup.language_name)
     )
     results = session.exec(statement).all()
+    logger.info(f"Found language groups with active projects: {results}")
     return [LanguageGroupRead(id=id, language_name=language_name) for id, language_name in results]
 
 @router.post("/{group_id}/join", status_code=status.HTTP_204_NO_CONTENT)

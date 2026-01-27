@@ -3,8 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 
 from ..database import get_session
-from ..deps import get_current_user
+from ..deps import get_current_user, require_role
 from ..models import TeacherVerification, User, UserRole, VerificationStatus, Notification
+from ..services.gamification import award_achievement
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/verifications", tags=["verifications"])
@@ -42,11 +43,12 @@ def submit_verification(
 ):
     """
     Allows a teacher to submit a new language verification request.
+    Requires a Pro subscription.
     """
-    if current_user.role != UserRole.TEACHER:
+    if not current_user.is_pro_subscriber:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only teachers can submit verification requests."
+            detail="You must be a Pro subscriber to submit verification requests."
         )
 
     # Check if a verification for this language already exists and is pending or approved
@@ -74,11 +76,40 @@ def submit_verification(
     for admin in admins:
         notification = Notification(
             user_id=admin.id,
-            content=f"New verification request from {current_user.full_name} for {verification.language}.",
-            link="/admin/dashboard" # Or a more specific link to the verifications page
+            message=f"New verification request from {current_user.full_name} for {verification.language}.",
+            link="/admin/dashboard"
         )
         session.add(notification)
 
     session.commit()
     session.refresh(verification)
+    return verification
+
+@router.post("/{verification_id}/approve", response_model=TeacherVerification)
+def approve_verification(
+    verification_id: int,
+    admin_user: User = Depends(require_role(UserRole.ADMIN)),
+    session: Session = Depends(get_session)
+):
+    """
+    Approves a teacher's verification request. (Admin only)
+    """
+    verification = session.get(TeacherVerification, verification_id)
+    if not verification:
+        raise HTTPException(status_code=404, detail="Verification not found.")
+
+    if verification.status == VerificationStatus.APPROVED:
+        raise HTTPException(status_code=400, detail="Verification is already approved.")
+
+    verification.status = VerificationStatus.APPROVED
+    
+    # Award achievement to the teacher
+    teacher = session.get(User, verification.teacher_id)
+    if teacher:
+        award_achievement(user=teacher, achievement_key="certified_pro", session=session)
+
+    session.add(verification)
+    session.commit()
+    session.refresh(verification)
+    
     return verification
